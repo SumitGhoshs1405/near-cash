@@ -1,0 +1,334 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { boot, sqliteAvailable } from './harness.mjs';
+
+const root = path.resolve(new URL('..', import.meta.url).pathname);
+const canRun = await sqliteAvailable();
+const t = (name, fn) => test(name, { skip: canRun ? false : 'node:sqlite not available (needs Node >= 22.5)' }, fn);
+
+const PROD = 'https://near-cash.example.workers.dev';
+const LOCAL = 'http://localhost:8787';
+const j = async r => ({ status: r.status, headers: r.headers, body: await r.json().catch(() => ({})) });
+
+// Replaces global fetch with an SMS-webhook capture, restoring it afterwards.
+async function withSmsCapture(fn) {
+  const real = globalThis.fetch; const sent = [];
+  globalThis.fetch = async (url, init) => { sent.push(JSON.parse(init.body)); return new Response('ok', { status: 200 }); };
+  try { return await fn(sent); } finally { globalThis.fetch = real; }
+}
+const smsEnv = { SMS_WEBHOOK_URL: 'https://sms.example/send', SMS_WEBHOOK_TOKEN: 'x' };
+const codeOf = sent => sent[sent.length - 1].message.match(/(\d{6})/)[1];
+
+async function guest(app, ip = '9.9.9.9') {
+  const r = await j(await app.call('POST', PROD + '/api/guest', { body: {}, ip }));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  return r.body;
+}
+async function locate(app, token, lat = 12.9716, lng = 77.5946) {
+  assert.equal((await app.call('POST', PROD + '/api/location', { body: { lat, lng }, token })).status, 200);
+}
+
+/* ---------- 1. Hide secrets / DEV_OTP ---------- */
+t('DEV_OTP=true on a deployed hostname NEVER returns the sign-in code', async () => {
+  const app = await boot(root, { DEV_OTP: 'true' });
+  const r = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
+  assert.equal(r.body.devCode, undefined);
+  assert.equal(r.status, 501); // no SMS provider configured -> refuses instead of leaking
+  const h = await j(await app.call('GET', PROD + '/healthz'));
+  assert.equal(h.body.devOtp, false);
+  assert.equal(h.body.devOtpConfigured, true);
+});
+
+t('failed SMS send does not lock the number out for 5 minutes', async () => {
+  const app = await boot(root, {});
+  const first = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
+  assert.equal(first.status, 501);
+  assert.equal(app.DB.raw.prepare('SELECT COUNT(*) c FROM otps').get().c, 0);
+  const second = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
+  assert.equal(second.status, 501); // not 429 "please wait"
+});
+
+t('DEV_OTP works on localhost only, and the code really signs you in', async () => {
+  const app = await boot(root, { DEV_OTP: 'true' });
+  const o = await j(await app.call('POST', LOCAL + '/api/otp', { body: { phone: '9876543210' } }));
+  assert.match(o.body.devCode, /^\d{6}$/);
+  const bad = await j(await app.call('POST', LOCAL + '/api/verify', { body: { phone: '9876543210', code: '000000', name: 'Asha', adult: true } }));
+  assert.equal(bad.status, 400);
+  const v = await j(await app.call('POST', LOCAL + '/api/verify', { body: { phone: '9876543210', code: o.body.devCode, name: 'Asha', adult: true } }));
+  assert.equal(v.status, 200);
+  assert.ok(v.body.token.length >= 64);
+  const me = await j(await app.call('GET', LOCAL + '/api/me', { token: v.body.token }));
+  assert.equal(me.body.name, 'Asha');
+});
+
+/* ---------- 2. Real authentication ---------- */
+t('real SMS flow: code is texted, never returned; adult flag and name required', async () => {
+  const app = await boot(root, smsEnv);
+  await withSmsCapture(async sent => {
+    const o = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
+    assert.deepEqual(o.body, { ok: true });
+    const code = codeOf(sent);
+    const noAdult = await j(await app.call('POST', PROD + '/api/verify', { body: { phone: '+919876543210', code, name: 'A', adult: false } }));
+    assert.equal(noAdult.status, 400);
+    const ok = await j(await app.call('POST', PROD + '/api/verify', { body: { phone: '+919876543210', code, name: 'Asha', adult: true } }));
+    assert.equal(ok.status, 200);
+    // code is single-use
+    const again = await j(await app.call('POST', PROD + '/api/verify', { body: { phone: '+919876543210', code, name: 'Asha', adult: true } }));
+    assert.equal(again.status, 400);
+  });
+});
+
+t('REQUIRE_SIGNIN=true blocks anonymous guest accounts', async () => {
+  const app = await boot(root, { REQUIRE_SIGNIN: 'true' });
+  const r = await j(await app.call('POST', PROD + '/api/guest', { body: {} }));
+  assert.equal(r.status, 403);
+});
+
+t('logout revokes the session server-side', async () => {
+  const app = await boot(root, {});
+  const g = await guest(app);
+  assert.equal((await app.call('GET', PROD + '/api/me', { token: g.token })).status, 200);
+  assert.equal((await app.call('POST', PROD + '/api/logout', { body: {}, token: g.token })).status, 200);
+  assert.equal((await app.call('GET', PROD + '/api/me', { token: g.token })).status, 401);
+});
+
+t('missing / garbage bearer tokens are rejected', async () => {
+  const app = await boot(root, {});
+  assert.equal((await app.call('GET', PROD + '/api/me')).status, 401);
+  assert.equal((await app.call('GET', PROD + '/api/me', { token: 'not-a-real-token' })).status, 401);
+});
+
+/* ---------- 3. Row-level access (ownership) ---------- */
+t('users cannot read or touch other users\' threads, messages, listings or PINs', async () => {
+  const app = await boot(root, {});
+  const [A, B, C] = [await guest(app), await guest(app), await guest(app)];
+  for (const u of [A, B, C]) await locate(app, u.token);
+  const l = await j(await app.call('POST', PROD + '/api/listings', { body: { type: 'have', amount: 500, minutes: 30, area: 'MG Road' }, token: A.token }));
+  assert.equal(l.status, 200);
+  const th = await j(await app.call('POST', PROD + '/api/threads', { body: { listingId: l.body.id }, token: B.token }));
+  assert.equal(th.status, 200);
+  const tid = th.body.id;
+  // participants can read; outsider gets 404 on every thread sub-route
+  assert.equal((await app.call('GET', PROD + '/api/threads/' + tid, { token: A.token })).status, 200);
+  assert.equal((await app.call('GET', PROD + '/api/threads/' + tid, { token: B.token })).status, 200);
+  for (const [m, p] of [['GET', ''], ['POST', '/messages'], ['POST', '/pin'], ['POST', '/pin/verify'], ['POST', '/complete'], ['POST', '/rate']]) {
+    const r = await app.call(m, PROD + '/api/threads/' + tid + p, { token: C.token, body: m === 'POST' ? { text: 'hi', code: '1234', stars: 5 } : undefined });
+    assert.equal(r.status, 404, `outsider ${m} ${p}`);
+  }
+  // outsider cannot cancel someone else's listing
+  assert.equal((await app.call('POST', PROD + '/api/listings/cancel', { body: { id: l.body.id }, token: C.token })).status, 404);
+  // outsider cannot report a thread they are not in
+  assert.equal((await app.call('POST', PROD + '/api/report', { body: { threadId: tid, reason: 'scam' }, token: C.token })).status, 404);
+  // nearby never leaks raw coordinates or phone numbers
+  const near = await j(await app.call('GET', PROD + '/api/nearby?r=10', { token: C.token }));
+  const dump = JSON.stringify(near.body);
+  assert.doesNotMatch(dump, /"lat"|"lng"|"phone"|guest:/);
+});
+
+t('full marketplace flow still works: chat, PIN, one-time verification, completion, rating', async () => {
+  const app = await boot(root, {});
+  const [A, B] = [await guest(app), await guest(app)];
+  await locate(app, A.token); await locate(app, B.token);
+  const l = await j(await app.call('POST', PROD + '/api/listings', { body: { type: 'have', amount: 200, minutes: 30 }, token: A.token }));
+  const near = await j(await app.call('GET', PROD + '/api/nearby?r=5', { token: B.token }));
+  assert.equal(near.body.items.length, 1);
+  const th = await j(await app.call('POST', PROD + '/api/threads', { body: { listingId: l.body.id }, token: B.token }));
+  // a second person cannot claim the same (now matched) listing
+  const C = await guest(app); await locate(app, C.token);
+  assert.equal((await app.call('POST', PROD + '/api/threads', { body: { listingId: l.body.id }, token: C.token })).status, 409);
+  const tid = th.body.id;
+  const msg = await j(await app.call('POST', PROD + '/api/threads/' + tid + '/messages', { body: { text: '  meet at the cafe \u0000 ' }, token: B.token }));
+  assert.equal(msg.body.text, 'meet at the cafe');
+  const list = await j(await app.call('GET', PROD + '/api/threads', { token: A.token }));
+  assert.equal(list.status, 200); assert.equal(list.body.items.length, 1);
+  const pin = await j(await app.call('POST', PROD + '/api/threads/' + tid + '/pin', { body: {}, token: A.token }));
+  assert.match(pin.body.code, /^\d{4}$/);
+  // generator cannot verify own PIN; wrong PIN rejected; right PIN completes
+  assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/pin/verify', { body: { code: pin.body.code }, token: A.token })).status, 403);
+  const wrong = pin.body.code === '1111' ? '2222' : '1111';
+  assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/pin/verify', { body: { code: wrong }, token: B.token })).status, 401);
+  const ok = await j(await app.call('POST', PROD + '/api/threads/' + tid + '/pin/verify', { body: { code: pin.body.code }, token: B.token }));
+  assert.equal(ok.body.completed, true);
+  assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/pin/verify', { body: { code: pin.body.code }, token: B.token })).status >= 400, true);
+  assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/rate', { body: { stars: 5, tag: 'fast' }, token: A.token })).status, 200);
+  assert.equal((await j(await app.call('GET', PROD + '/api/me', { token: A.token }))).body.done, 1);
+});
+
+/* ---------- 4. Rate limiting (durable) ---------- */
+t('OTP: per-phone limit (5/hour) blocks SMS-bombing one number', async () => {
+  const app = await boot(root, smsEnv);
+  await withSmsCapture(async sent => {
+    const results = [];
+    await app.call('GET', PROD + '/healthz'); // creates the schema
+    for (let i = 0; i < 7; i++) {
+      app.DB.raw.exec('DELETE FROM otps'); // bypass the 5-minute cooldown to isolate the hourly cap
+      results.push((await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' }, ip: '5.5.5.' + i })).status);
+    }
+    assert.deepEqual(results, [200, 200, 200, 200, 200, 429, 429]);
+    assert.equal(sent.length, 5);
+  });
+});
+
+t('OTP: per-IP limit (10/hour) blocks spraying many numbers', async () => {
+  const app = await boot(root, smsEnv);
+  await withSmsCapture(async sent => {
+    const results = [];
+    for (let i = 0; i < 12; i++) results.push((await app.call('POST', PROD + '/api/otp', { body: { phone: '+9198765432' + String(10 + i) }, ip: '7.7.7.7' })).status);
+    assert.deepEqual(results, [...Array(10).fill(200), 429, 429]);
+    assert.equal(sent.length, 10);
+  });
+});
+
+t('OTP: 5 wrong guesses burn the code; re-requesting is capped so brute force is infeasible', async () => {
+  const app = await boot(root, smsEnv);
+  await withSmsCapture(async sent => {
+    await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } });
+    const real = codeOf(sent);
+    const wrong = real === '123456' ? '654321' : '123456';
+    const statuses = [];
+    for (let i = 0; i < 6; i++) statuses.push((await app.call('POST', PROD + '/api/verify', { body: { phone: '+919876543210', code: wrong, name: 'A', adult: true } })).status);
+    assert.deepEqual(statuses, [400, 400, 400, 400, 400, 429]);
+    const late = await app.call('POST', PROD + '/api/verify', { body: { phone: '+919876543210', code: real, name: 'A', adult: true } });
+    assert.equal(late.status, 400); // code was destroyed
+  });
+});
+
+t('verify: per-IP cap (30/hour)', async () => {
+  const app = await boot(root, smsEnv);
+  const codes = [];
+  for (let i = 0; i < 32; i++) codes.push((await app.call('POST', PROD + '/api/verify', { body: { phone: '+919876543210', code: '000000', name: 'A', adult: true }, ip: '6.6.6.6' })).status);
+  assert.equal(codes.slice(0, 30).every(s => s === 400), true);
+  assert.equal(codes[30], 429);
+});
+
+t('guest creation: durable per-IP cap (20/hour) survives a Worker restart', async () => {
+  const app = await boot(root, {});
+  for (let i = 0; i < 20; i++) assert.equal((await app.call('POST', PROD + '/api/guest', { body: {}, ip: '4.4.4.4' })).status, 200);
+  assert.equal((await app.call('POST', PROD + '/api/guest', { body: {}, ip: '4.4.4.4' })).status, 429);
+  // "restart": brand-new Worker module instance, same database
+  const { loadWorker } = await import('./harness.mjs');
+  const fresh = await loadWorker(root);
+  const r = await fresh.fetch(new Request(PROD + '/api/guest', { method: 'POST', headers: { 'CF-Connecting-IP': '4.4.4.4', 'Content-Type': 'application/json' }, body: '{}' }), app.env);
+  assert.equal(r.status, 429);
+  assert.equal((await app.call('POST', PROD + '/api/guest', { body: {}, ip: '4.4.4.5' })).status, 200); // other IPs unaffected
+});
+
+t('per-user abuse limits still apply (listing creation)', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app); await locate(app, A.token);
+  const s = [];
+  for (let i = 0; i < 4; i++) s.push((await app.call('POST', PROD + '/api/listings', { body: { type: 'need', amount: 10, minutes: 10 }, token: A.token })).status);
+  assert.deepEqual(s, [200, 200, 200, 400]); // 4th blocked by the 3-live-post rule
+});
+
+/* ---------- 5. Server-side validation ---------- */
+t('non-object / malformed bodies return 400, never 500', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app);
+  for (const raw of ['null', '[]', '123', '"str"', '{bad json', 'true']) {
+    const r = await app.call('POST', PROD + '/api/profile', { raw, token: A.token });
+    assert.equal(r.status, 400, raw);
+  }
+});
+
+t('oversized bodies are rejected with 413', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app);
+  const r = await app.call('POST', PROD + '/api/profile', { raw: JSON.stringify({ name: 'x'.repeat(20000) }), token: A.token });
+  assert.equal(r.status, 413);
+});
+
+t('wrong-typed ids and out-of-range values are rejected cleanly', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app); await locate(app, A.token);
+  const post = (p, body) => app.call('POST', PROD + '/api/' + p, { body, token: A.token });
+  assert.equal((await post('listings/cancel', { id: { $ne: 1 } })).status, 404);
+  assert.equal((await post('listings/cancel', { id: ['x'] })).status, 404);
+  assert.equal((await post('threads', { listingId: { a: 1 } })).status, 409);
+  assert.equal((await post('report', { threadId: [] , reason: 'scam' })).status, 404);
+  for (const bad of [{ type: 'have', amount: 0, minutes: 30 }, { type: 'have', amount: 5001, minutes: 30 }, { type: 'x', amount: 5, minutes: 30 }, { type: 'have', amount: 5, minutes: 4 }, { type: 'have', amount: 5, minutes: 241 }, { type: 'have', amount: 'abc', minutes: 30 }])
+    assert.equal((await post('listings', bad)).status, 400, JSON.stringify(bad));
+  assert.equal((await post('location', { lat: 91, lng: 0 })).status, 400);
+  assert.equal((await post('location', { lat: 'x', lng: 0 })).status, 400);
+  assert.equal((await post('location', { lat: null, lng: null })).status, 400);
+});
+
+t('display names / areas are stripped of control characters and length-capped', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app);
+  const r = await j(await app.call('POST', PROD + '/api/profile', { body: { name: 'A\u0000B\u0007C' + 'z'.repeat(100) }, token: A.token }));
+  assert.equal(r.body.name.length, 40);
+  assert.match(r.body.name, /^ABCz+$/);
+});
+
+t('SQL-injection style input is treated as plain data', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app);
+  const evil = "x'); DROP TABLE users;--";
+  assert.equal((await app.call('POST', PROD + '/api/profile', { body: { name: evil }, token: A.token })).status, 200);
+  assert.equal(app.DB.raw.prepare('SELECT COUNT(*) c FROM users').get().c, 1);
+  assert.equal((await j(await app.call('GET', PROD + '/api/me', { token: A.token }))).body.name, evil.slice(0, 40));
+  assert.equal((await app.call('GET', PROD + '/api/admin/summary?range=' + encodeURIComponent("30d';DROP TABLE users;--"), { headers: { 'X-Admin-Key': 'nope' } })).status >= 400, true);
+});
+
+/* ---------- Admin surface ---------- */
+t('admin: no wildcard CORS; only the exact ADMIN_ORIGIN is allowed', async () => {
+  const site = 'https://admin.example.com';
+  const none = await boot(root, { ADMIN_ANALYTICS_KEY: 'k'.repeat(32) });
+  let r = await none.call('GET', PROD + '/api/admin/status', { headers: { Origin: site } });
+  assert.equal(r.headers.get('access-control-allow-origin'), null);
+  const set = await boot(root, { ADMIN_ANALYTICS_KEY: 'k'.repeat(32), ADMIN_ORIGIN: site });
+  r = await set.call('GET', PROD + '/api/admin/status', { headers: { Origin: site } });
+  assert.equal(r.headers.get('access-control-allow-origin'), site);
+  r = await set.call('GET', PROD + '/api/admin/status', { headers: { Origin: 'https://evil.example' } });
+  assert.equal(r.headers.get('access-control-allow-origin'), null);
+  r = await set.call('OPTIONS', PROD + '/api/admin/summary', { headers: { Origin: site } });
+  assert.equal(r.status, 204);
+  assert.equal(r.headers.get('access-control-allow-origin'), site);
+});
+
+t('admin: /status is public-safe; key holders see diagnostics; summary needs the key', async () => {
+  const KEY = 'k'.repeat(32);
+  const app = await boot(root, { ADMIN_ANALYTICS_KEY: KEY });
+  const pub = await j(await app.call('GET', PROD + '/api/admin/status'));
+  assert.deepEqual(pub.body, { ok: true, configured: true });
+  const priv = await j(await app.call('GET', PROD + '/api/admin/status', { headers: { 'X-Admin-Key': KEY } }));
+  assert.deepEqual(priv.body.presentAdminBindings, ['ADMIN_ANALYTICS_KEY']);
+  assert.equal((await app.call('GET', PROD + '/api/admin/summary')).status, 401);
+  assert.equal((await app.call('GET', PROD + '/api/admin/summary', { headers: { 'X-Admin-Key': 'wrong' } })).status, 401);
+  const good = await j(await app.call('GET', PROD + '/api/admin/summary?range=7d', { headers: { 'X-Admin-Key': KEY } }));
+  assert.equal(good.status, 200); assert.equal(good.body.ok, true);
+  const obs = await j(await app.call('GET', PROD + '/api/admin/observability', { headers: { 'X-Admin-Key': KEY } }));
+  assert.equal(obs.status, 200);
+  const unconfigured = await boot(root, {});
+  assert.deepEqual((await j(await unconfigured.call('GET', PROD + '/api/admin/status'))).body, { ok: true, configured: false });
+  assert.equal((await unconfigured.call('GET', PROD + '/api/admin/summary', { headers: { 'X-Admin-Key': 'x' } })).status, 503);
+});
+
+t('admin: 10 wrong keys lock the IP out (even for the right key), other IPs unaffected', async () => {
+  const KEY = 'k'.repeat(32);
+  const app = await boot(root, { ADMIN_ANALYTICS_KEY: KEY });
+  const s = [];
+  for (let i = 0; i < 10; i++) s.push((await app.call('GET', PROD + '/api/admin/summary', { headers: { 'X-Admin-Key': 'bad' + i }, ip: '3.3.3.3' })).status);
+  assert.equal(s.every(x => x === 401), true);
+  assert.equal((await app.call('GET', PROD + '/api/admin/summary', { headers: { 'X-Admin-Key': KEY }, ip: '3.3.3.3' })).status, 429);
+  assert.equal((await app.call('GET', PROD + '/api/admin/summary', { headers: { 'X-Admin-Key': KEY }, ip: '3.3.3.4' })).status, 200);
+});
+
+/* ---------- Headers ---------- */
+t('API responses carry security headers including a CSP', async () => {
+  const app = await boot(root, {});
+  const r = await app.call('GET', PROD + '/healthz');
+  for (const h of ['content-security-policy', 'x-content-type-options', 'x-frame-options', 'strict-transport-security', 'referrer-policy', 'permissions-policy'])
+    assert.ok(r.headers.get(h), h);
+  assert.match(r.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+});
+
+test('static assets get a strict CSP via public/_headers', async () => {
+  const h = await fs.readFile(path.join(root, 'public/_headers'), 'utf8');
+  assert.match(h, /Content-Security-Policy:/);
+  for (const d of ["default-src 'self'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "connect-src 'self'"]) assert.ok(h.includes(d), d);
+  assert.doesNotMatch(h, /script-src[^;]*https?:/); // no third-party script hosts
+});
