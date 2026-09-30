@@ -23,7 +23,7 @@ This version moves the Node/JSON-file backend to Cloudflare Workers + D1 + SQLit
 ## Local development
 `npx wrangler dev`
 
-Sign-in codes: add the text variable DEV_OTP=true (Workers > Settings > Variables and Secrets) to show the code on screen while testing. For real texts add secrets TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM (or SMS_WEBHOOK_URL). Remove DEV_OTP before real users arrive; while it is on, anyone can sign in as any phone number.
+Sign-in codes: production sends real SMS. Add the secrets `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` (or `SMS_WEBHOOK_URL` + `SMS_WEBHOOK_TOKEN`) with `npx wrangler secret put <NAME>` **before deploying** - `REQUIRE_SIGNIN` is now `"true"`, so nobody can sign in until an SMS provider is configured. For local development copy `.dev.vars.example` to `.dev.vars` (git-ignored) to see codes on screen; `DEV_OTP` is only honoured on `localhost`/`127.0.0.1` and is ignored on any deployed hostname.
 
 ## Google Maps view
 Open config.js, paste your Google Maps JavaScript API key between the quotes, and redeploy. In Google Cloud, restrict the key to your website address. Without a key the Map tab shows a setup note and the radar still works.
@@ -49,7 +49,7 @@ This build adds a read-only admin endpoint for the separate Near Cash Admin Dash
 5. In the separate `near-cash-admin` repository, set the API base to this Worker URL (for example, `https://your-worker.workers.dev`).
 6. Open the admin dashboard and enter the same admin key.
 
-The dashboard calls `GET /api/admin/summary` with `X-Admin-Key`. For troubleshooting, `GET /api/admin/status` reports only whether a supported admin secret binding is present, plus (new) the *names* of any admin/analytics-looking bindings it can see — it never exposes the secret value itself. The Worker accepts the primary `ADMIN_ANALYTICS_KEY` binding and the legacy aliases `ADMIN_ANALYTICS_K` and `ADMIN_KEY`. The endpoint reads existing D1 data and returns privacy-safe aggregate statistics.
+The dashboard calls `GET /api/admin/summary` with `X-Admin-Key`. For troubleshooting, `GET /api/admin/status` publicly reports only `configured` true/false; a caller who also sends the valid `X-Admin-Key` additionally sees the *names* of any admin/analytics-looking bindings — it never exposes the secret value itself. The Worker accepts the primary `ADMIN_ANALYTICS_KEY` binding and the legacy aliases `ADMIN_ANALYTICS_K` and `ADMIN_KEY`. The endpoint reads existing D1 data and returns privacy-safe aggregate statistics.
 
 The endpoint supports CORS for the separate dashboard and does not expose phone numbers, session tokens, PINs, message text, or exact user locations.
 
@@ -58,7 +58,7 @@ The endpoint supports CORS for the separate dashboard and does not expose phone 
 
 The Worker now applies API rate limiting, strict Bearer-token authentication for authenticated API requests, security response headers, production-safe error responses with request IDs, race-safe listing claiming and meetup-PIN completion, and authenticated streaming without putting the session token in the stream URL.
 
-`ADMIN_ORIGIN` is an optional Worker environment variable. If set, browser access to the admin analytics API is restricted to that exact origin. Existing deployments without it retain the previous cross-origin behavior for compatibility; the admin key is still required for analytics data.
+`ADMIN_ORIGIN` is an optional Worker environment variable. If set, browser access to the admin analytics API is restricted to that exact origin. **If it is not set, no cross-origin access is allowed (no wildcard).** Set `ADMIN_ORIGIN` to the exact origin of your admin dashboard (for example `https://near-cash-admin.pages.dev`, no trailing slash) or the dashboard's browser calls will be blocked. The admin key is always required for analytics data.
 
 ## Production observability (Upgrade 4)
 
@@ -131,3 +131,19 @@ These documents are intentionally drafted as a product-specific compliance frame
 - Website: https://nearcash.site
 - No CIN / no GSTIN provided; do not represent Near Cash as an incorporated company.
 - Non-custodial: Near Cash does not hold, custody, transfer, settle or process participant funds.
+
+
+## Security hardening (v19)
+
+| Checklist item | What is enforced |
+|---|---|
+| Hide secrets | No secrets in code or `wrangler.jsonc`; secrets via `wrangler secret put`; `.gitignore` covers `.dev.vars`/`.env`; `DEV_OTP` works on localhost only; CI secret scan (gitleaks) + `npm run security` |
+| Real authentication | SMS OTP required (`REQUIRE_SIGNIN=true`, guests disabled); codes never returned by the API; single-use, 5-minute, 5-try codes; hashed session tokens; `POST /api/logout` revokes the session server-side; failed SMS sends do not lock the number out |
+| Row-level security | D1 has no RLS, so every query is scoped in the Worker by the authenticated user id (`a=? OR b=?`, `uid=?`); covered by cross-user integration tests |
+| Rate limiting | Durable (D1) limits, shared across instances and surviving redeploys: OTP 5/hour per phone and 10/hour per IP, verify 30/hour per IP, guest creation 20/hour per IP, admin 30-60/min per IP, admin key lockout after 10 wrong keys/hour per IP; plus existing per-user limits |
+| Server-side validation | Body must be a JSON object (<= 10 KB); ids coerced to strings; lat/lng must be real numbers in range; amounts/minutes/types whitelisted; control characters stripped from names, areas and messages; all SQL parameterized |
+| Automated checks | `npm run check` = syntax + 47 tests (including an integration suite running the real Worker on SQLite) + `scripts/security-check.mjs`; GitHub Actions runs it plus `npm audit` and gitleaks on every push/PR and weekly; Dependabot enabled |
+
+Headers: API responses and static assets (via `public/_headers`) send a Content-Security-Policy, HSTS, `X-Frame-Options: DENY`, `nosniff`, Referrer-Policy and Permissions-Policy. The CSP allows inline scripts/styles because the UI uses inline `onclick` handlers; it still blocks third-party scripts, framing, plugins, `<base>` hijacking and any network request to other origins.
+
+Apply the new table before/at deploy: it is created automatically on first request, or run `npx wrangler d1 execute near-cash-db --remote --file=schema.sql`.

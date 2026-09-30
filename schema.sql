@@ -143,3 +143,11 @@ CREATE TABLE IF NOT EXISTS ratings (
 );
 CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_uid);
 CREATE INDEX IF NOT EXISTS idx_ratings_tid ON ratings(tid);
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+  k TEXT NOT NULL,
+  window_start INTEGER NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(k, window_start)
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start);

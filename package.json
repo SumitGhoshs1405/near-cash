@@ -1,1 +1,18 @@
-{"name":"near-cash-cloudflare","private":true,"version":"1.0.0-all-upgrades-qa","scripts":{"deploy":"wrangler deploy","dev":"wrangler dev","check":"node --check src/index.js && node --check public/app.js && node --check public/live.js && node --check public/sw.js && node --test tests/qa.test.mjs","test":"node --test tests/qa.test.mjs"},"devDependencies":{"wrangler":"^4.40.0"}}
+{
+  "name": "near-cash-cloudflare",
+  "private": true,
+  "version": "1.1.0-security-hardened",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "check": "node --check src/index.js && node --check public/app.js && node --check public/live.js && node --check public/sw.js && node scripts/security-check.mjs && node --test tests/qa.test.mjs tests/security.integration.test.mjs",
+    "test": "node --test tests/qa.test.mjs tests/security.integration.test.mjs",
+    "security": "node scripts/security-check.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
