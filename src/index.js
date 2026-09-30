@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 
-const SCHEMA=["CREATE TABLE IF NOT EXISTS users (\n  id TEXT PRIMARY KEY,\n  phone TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  done INTEGER NOT NULL DEFAULT 0,\n  lat REAL,\n  lng REAL,\n  at INTEGER,\n  created INTEGER NOT NULL\n)", "CREATE TABLE IF NOT EXISTS sessions (\n  token_hash TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  exp INTEGER NOT NULL,\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_sessions_exp ON sessions(exp)", "CREATE TABLE IF NOT EXISTS otps (\n  phone TEXT PRIMARY KEY,\n  hash TEXT NOT NULL,\n  exp INTEGER NOT NULL,\n  tries INTEGER NOT NULL DEFAULT 0\n)", "CREATE TABLE IF NOT EXISTS listings (\n  id TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  type TEXT NOT NULL CHECK(type IN ('have','need')),\n  amount INTEGER NOT NULL,\n  exp INTEGER NOT NULL,\n  status TEXT NOT NULL DEFAULT 'open',\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_listings_open ON listings(status, exp)", "CREATE INDEX IF NOT EXISTS idx_listings_uid ON listings(uid)", "CREATE TABLE IF NOT EXISTS threads (\n  id TEXT PRIMARY KEY,\n  lid TEXT NOT NULL,\n  amount INTEGER NOT NULL,\n  type TEXT NOT NULL,\n  a TEXT NOT NULL,\n  b TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'open',\n  confirmed TEXT NOT NULL DEFAULT '[]',\n  created INTEGER NOT NULL,\n  pin_hash TEXT,\n  pin_by TEXT,\n  pin_exp INTEGER,\n  pin_tries INTEGER NOT NULL DEFAULT 0,\n  pin_verified INTEGER NOT NULL DEFAULT 0,\n  FOREIGN KEY(a) REFERENCES users(id) ON DELETE CASCADE,\n  FOREIGN KEY(b) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_threads_user_a ON threads(a, created)", "CREATE INDEX IF NOT EXISTS idx_threads_user_b ON threads(b, created)", "CREATE TABLE IF NOT EXISTS messages (\n  id TEXT PRIMARY KEY,\n  tid TEXT NOT NULL,\n  from_uid TEXT NOT NULL,\n  text TEXT NOT NULL,\n  at INTEGER NOT NULL,\n  FOREIGN KEY(tid) REFERENCES threads(id) ON DELETE CASCADE,\n  FOREIGN KEY(from_uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_messages_tid ON messages(tid, at)", "CREATE TABLE IF NOT EXISTS reports (\n  id TEXT PRIMARY KEY,\n  by_uid TEXT NOT NULL,\n  who_uid TEXT NOT NULL,\n  tid TEXT NOT NULL,\n  reason TEXT NOT NULL,\n  at INTEGER NOT NULL,\n  last_json TEXT NOT NULL\n)", "CREATE TABLE IF NOT EXISTS blocks (\n  by_uid TEXT NOT NULL,\n  who_uid TEXT NOT NULL,\n  PRIMARY KEY(by_uid, who_uid)\n)", "CREATE TABLE IF NOT EXISTS abuse_limits (\n  uid TEXT NOT NULL,\n  action TEXT NOT NULL,\n  window_start INTEGER NOT NULL,\n  count INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY(uid, action, window_start),\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_abuse_limits_uid ON abuse_limits(uid, action, window_start)", "CREATE TABLE IF NOT EXISTS notifications (\n  id TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  kind TEXT NOT NULL,\n  text TEXT NOT NULL,\n  ref TEXT,\n  at INTEGER NOT NULL,\n  read INTEGER NOT NULL DEFAULT 0,\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_notifications_uid ON notifications(uid, at)", "CREATE TABLE IF NOT EXISTS observability_events (\n  id TEXT PRIMARY KEY,\n  at INTEGER NOT NULL,\n  kind TEXT NOT NULL,\n  route TEXT NOT NULL,\n  status INTEGER NOT NULL,\n  request_id TEXT NOT NULL,\n  message TEXT NOT NULL\n)", "CREATE INDEX IF NOT EXISTS idx_observability_at ON observability_events(at)", "CREATE INDEX IF NOT EXISTS idx_observability_kind_at ON observability_events(kind, at)", "CREATE TABLE IF NOT EXISTS analytics_events (\n  id TEXT PRIMARY KEY,\n  at INTEGER NOT NULL,\n  event TEXT NOT NULL,\n  client_id TEXT NOT NULL,\n  screen TEXT,\n  meta_json TEXT NOT NULL DEFAULT '{}'\n)", "CREATE INDEX IF NOT EXISTS idx_analytics_at ON analytics_events(at)", "CREATE INDEX IF NOT EXISTS idx_analytics_event_at ON analytics_events(event, at)", "CREATE INDEX IF NOT EXISTS idx_users_at ON users(at)", "CREATE INDEX IF NOT EXISTS idx_listings_exp_status ON listings(status, exp)", "CREATE INDEX IF NOT EXISTS idx_threads_status_created ON threads(status, created)", "CREATE INDEX IF NOT EXISTS idx_notifications_uid_read_at ON notifications(uid, read, at)", "CREATE INDEX IF NOT EXISTS idx_reports_by_tid_at ON reports(by_uid, tid, at)", "CREATE TABLE IF NOT EXISTS ratings (\n  tid TEXT NOT NULL,\n  rater_uid TEXT NOT NULL,\n  ratee_uid TEXT NOT NULL,\n  stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5),\n  tag TEXT,\n  at INTEGER NOT NULL,\n  PRIMARY KEY(tid, rater_uid),\n  FOREIGN KEY(tid) REFERENCES threads(id) ON DELETE CASCADE,\n  FOREIGN KEY(rater_uid) REFERENCES users(id) ON DELETE CASCADE,\n  FOREIGN KEY(ratee_uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_uid)", "CREATE INDEX IF NOT EXISTS idx_ratings_tid ON ratings(tid)"];
+const SCHEMA=["CREATE TABLE IF NOT EXISTS users (\n  id TEXT PRIMARY KEY,\n  phone TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  done INTEGER NOT NULL DEFAULT 0,\n  lat REAL,\n  lng REAL,\n  at INTEGER,\n  created INTEGER NOT NULL\n)", "CREATE TABLE IF NOT EXISTS sessions (\n  token_hash TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  exp INTEGER NOT NULL,\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_sessions_exp ON sessions(exp)", "CREATE TABLE IF NOT EXISTS otps (\n  phone TEXT PRIMARY KEY,\n  hash TEXT NOT NULL,\n  exp INTEGER NOT NULL,\n  tries INTEGER NOT NULL DEFAULT 0\n)", "CREATE TABLE IF NOT EXISTS listings (\n  id TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  type TEXT NOT NULL CHECK(type IN ('have','need')),\n  amount INTEGER NOT NULL,\n  exp INTEGER NOT NULL,\n  status TEXT NOT NULL DEFAULT 'open',\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_listings_open ON listings(status, exp)", "CREATE INDEX IF NOT EXISTS idx_listings_uid ON listings(uid)", "CREATE TABLE IF NOT EXISTS threads (\n  id TEXT PRIMARY KEY,\n  lid TEXT NOT NULL,\n  amount INTEGER NOT NULL,\n  type TEXT NOT NULL,\n  a TEXT NOT NULL,\n  b TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'open',\n  confirmed TEXT NOT NULL DEFAULT '[]',\n  created INTEGER NOT NULL,\n  pin_hash TEXT,\n  pin_by TEXT,\n  pin_exp INTEGER,\n  pin_tries INTEGER NOT NULL DEFAULT 0,\n  pin_verified INTEGER NOT NULL DEFAULT 0,\n  FOREIGN KEY(a) REFERENCES users(id) ON DELETE CASCADE,\n  FOREIGN KEY(b) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_threads_user_a ON threads(a, created)", "CREATE INDEX IF NOT EXISTS idx_threads_user_b ON threads(b, created)", "CREATE TABLE IF NOT EXISTS messages (\n  id TEXT PRIMARY KEY,\n  tid TEXT NOT NULL,\n  from_uid TEXT NOT NULL,\n  text TEXT NOT NULL,\n  at INTEGER NOT NULL,\n  FOREIGN KEY(tid) REFERENCES threads(id) ON DELETE CASCADE,\n  FOREIGN KEY(from_uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_messages_tid ON messages(tid, at)", "CREATE TABLE IF NOT EXISTS reports (\n  id TEXT PRIMARY KEY,\n  by_uid TEXT NOT NULL,\n  who_uid TEXT NOT NULL,\n  tid TEXT NOT NULL,\n  reason TEXT NOT NULL,\n  at INTEGER NOT NULL,\n  last_json TEXT NOT NULL\n)", "CREATE TABLE IF NOT EXISTS blocks (\n  by_uid TEXT NOT NULL,\n  who_uid TEXT NOT NULL,\n  PRIMARY KEY(by_uid, who_uid)\n)", "CREATE TABLE IF NOT EXISTS abuse_limits (\n  uid TEXT NOT NULL,\n  action TEXT NOT NULL,\n  window_start INTEGER NOT NULL,\n  count INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY(uid, action, window_start),\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_abuse_limits_uid ON abuse_limits(uid, action, window_start)", "CREATE TABLE IF NOT EXISTS notifications (\n  id TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  kind TEXT NOT NULL,\n  text TEXT NOT NULL,\n  ref TEXT,\n  at INTEGER NOT NULL,\n  read INTEGER NOT NULL DEFAULT 0,\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_notifications_uid ON notifications(uid, at)", "CREATE TABLE IF NOT EXISTS observability_events (\n  id TEXT PRIMARY KEY,\n  at INTEGER NOT NULL,\n  kind TEXT NOT NULL,\n  route TEXT NOT NULL,\n  status INTEGER NOT NULL,\n  request_id TEXT NOT NULL,\n  message TEXT NOT NULL\n)", "CREATE INDEX IF NOT EXISTS idx_observability_at ON observability_events(at)", "CREATE INDEX IF NOT EXISTS idx_observability_kind_at ON observability_events(kind, at)", "CREATE TABLE IF NOT EXISTS analytics_events (\n  id TEXT PRIMARY KEY,\n  at INTEGER NOT NULL,\n  event TEXT NOT NULL,\n  client_id TEXT NOT NULL,\n  screen TEXT,\n  meta_json TEXT NOT NULL DEFAULT '{}'\n)", "CREATE INDEX IF NOT EXISTS idx_analytics_at ON analytics_events(at)", "CREATE INDEX IF NOT EXISTS idx_analytics_event_at ON analytics_events(event, at)", "CREATE INDEX IF NOT EXISTS idx_users_at ON users(at)", "CREATE INDEX IF NOT EXISTS idx_listings_exp_status ON listings(status, exp)", "CREATE INDEX IF NOT EXISTS idx_threads_status_created ON threads(status, created)", "CREATE INDEX IF NOT EXISTS idx_notifications_uid_read_at ON notifications(uid, read, at)", "CREATE INDEX IF NOT EXISTS idx_reports_by_tid_at ON reports(by_uid, tid, at)", "CREATE TABLE IF NOT EXISTS ratings (\n  tid TEXT NOT NULL,\n  rater_uid TEXT NOT NULL,\n  ratee_uid TEXT NOT NULL,\n  stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5),\n  tag TEXT,\n  at INTEGER NOT NULL,\n  PRIMARY KEY(tid, rater_uid),\n  FOREIGN KEY(tid) REFERENCES threads(id) ON DELETE CASCADE,\n  FOREIGN KEY(rater_uid) REFERENCES users(id) ON DELETE CASCADE,\n  FOREIGN KEY(ratee_uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_uid)", "CREATE INDEX IF NOT EXISTS idx_ratings_tid ON ratings(tid)", "CREATE TABLE IF NOT EXISTS rate_limits (\n  k TEXT NOT NULL,\n  window_start INTEGER NOT NULL,\n  count INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY(k, window_start)\n)", "CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)"];
 let schemaReady=false;
 // Column additions for DBs created before the meetup-PIN feature existed. SQLite has no
 // "ADD COLUMN IF NOT EXISTS", so these are run one at a time and a "duplicate column" failure
@@ -14,12 +14,10 @@ const MIGRATIONS=[
   "ALTER TABLE listings ADD COLUMN area TEXT",
 ];
 async function ensureSchema(env){if(schemaReady)return;await env.DB.batch(SCHEMA.map(q=>env.DB.prepare(q)));for(const q of MIGRATIONS){try{await env.DB.prepare(q).run();}catch(e){if(!/duplicate column/i.test(e&&e.message||""))console.error("migration",q,e&&e.message);}}schemaReady=true;}
-const guestHits=new Map();
 const apiHits=new Map();
-const guestOk=ip=>{const t=Date.now();if(guestHits.size>5000){for(const [k,v] of guestHits)if(v.r<=t)guestHits.delete(k);}const h=guestHits.get(ip);if(!h||h.r<t){guestHits.set(ip,{c:1,r:t+3600000});return true;}return ++h.c<=20;};
 const clientIp=req=>String(req.headers.get("CF-Connecting-IP")||req.headers.get("CF-Connecting-IPV6")||"?").slice(0,80);
 const rateLimit=(key,limit,windowMs)=>{const now=Date.now();if(apiHits.size>5000){for(const [k,v] of apiHits)if(v.r<=now)apiHits.delete(k);}const h=apiHits.get(key);if(!h||h.r<=now){apiHits.set(key,{c:1,r:now+windowMs});return {ok:true,retry:0};}h.c+=1;return h.c<=limit?{ok:true,retry:0}:{ok:false,retry:Math.max(1,Math.ceil((h.r-now)/1000))};};
-const securityHeaders={"X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Referrer-Policy":"strict-origin-when-cross-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=(self)","Strict-Transport-Security":"max-age=31536000; includeSubDomains","Cache-Control":"no-store"};
+const securityHeaders={"X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Referrer-Policy":"strict-origin-when-cross-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=(self)","Strict-Transport-Security":"max-age=31536000; includeSubDomains","Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'","Cache-Control":"no-store"};
 const json = (o, status=200, extra={}) => new Response(JSON.stringify(o), {status, headers:{"Content-Type":"application/json; charset=utf-8", ...securityHeaders, ...extra}});
 const err = (m,c=400) => { const e=new Error(m); e.status=c; throw e; };
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0,16);
@@ -34,6 +32,9 @@ async function recordObs(env,{kind,route,status,requestId,message}){
   }catch(e){ console.error("observability",e&&e.message||e); }
 }
 async function sha(s){ const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(s))); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+const clean=v=>String(v??"").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,"");
+// DEV_OTP (code shown in the API response) is honoured ONLY when the request host is local, so a stray DEV_OTP=true in production can never expose sign-in codes.
+const devOtpOn=(env,url)=>env.DEV_OTP==="true"&&/^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
 const escPhone = s => String(s||"").replace(/[\s-]/g,"");
 const rad = x => x*Math.PI/180;
 const dist=(a,b)=>{const h=Math.sin(rad(b.lat-a.lat)/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(rad(b.lng-a.lng)/2)**2;return 12742*Math.asin(Math.sqrt(h));};
@@ -41,7 +42,7 @@ const bearing=(a,b)=>{const y=Math.sin(rad(b.lng-a.lng))*Math.cos(rad(b.lat)),x=
 async function repOf(env,uid){const r=await env.DB.prepare("SELECT AVG(stars) a,COUNT(*) c FROM ratings WHERE ratee_uid=?").bind(uid).first();return{avg:(r&&r.a)||0,count:(r&&r.c)||0};}
 const badgesFor=(u,rep)=>{const b=[];if(u.phone&&!String(u.phone).startsWith("guest:"))b.push("verified");if((u.done||0)>=5&&((rep&&rep.avg)||0)>=4.5)b.push("trusted");if((u.done||0)===0)b.push("new");return b;};
 const pubU=(u,rep)=>({id:u.id,name:u.name,done:u.done||0,rating:rep?Math.round((rep.avg||0)*10)/10:0,ratingCount:rep?(rep.count||0):0,badges:badgesFor(u,rep||{avg:0,count:0})});
-const readBody=async req=>{let t=await req.text(); if(t.length>10000)err("Request too large",413); try{return t?JSON.parse(t):{}}catch{err("Invalid JSON",400)}};
+const readBody=async req=>{let t=await req.text(); if(t.length>10000)err("Request too large",413); let v;try{v=t?JSON.parse(t):{}}catch{err("Invalid JSON",400)}if(v===null||typeof v!=="object"||Array.isArray(v))err("Invalid JSON",400);return v};
 const parseRow = r => r ? {...r} : null;
 const normPhone=(env,p)=>{p=String(p||"").replace(/[\s-]/g,"");return p[0]==="+"?p:/^\d{10}$/.test(p)?"+"+(env.DEFAULT_COUNTRY_CODE||"91")+p:"+"+p;};
 async function sendSms(env,to,code){
@@ -64,14 +65,36 @@ async function userActionLimit(env,uid,action,limit,windowMs){
   if(count>limit)err("Too many requests. Please try again later.",429);
   if((Math.random()*100)<1) await env.DB.prepare("DELETE FROM abuse_limits WHERE window_start<?").bind(Date.now()-86400000).run().catch(()=>{});
 }
+// Durable (D1) limiter keyed by any string (IP, phone...). Unlike the in-memory rateLimit it survives redeploys and is shared by every Worker instance.
+async function keyLimit(env,key,limit,windowMs){
+  const now=Date.now(),start=Math.floor(now/windowMs)*windowMs;
+  const r=await env.DB.prepare("INSERT INTO rate_limits(k,window_start,count) VALUES(?,?,1) ON CONFLICT(k,window_start) DO UPDATE SET count=count+1 RETURNING count").bind(String(key).slice(0,160),start).first();
+  if(Math.random()*100<1) await env.DB.prepare("DELETE FROM rate_limits WHERE window_start<?").bind(now-86400000).run().catch(()=>{});
+  return {ok:Number(r&&r.count||0)<=limit,retry:Math.max(1,Math.ceil((start+windowMs-now)/1000))};
+}
+async function keyLocked(env,key,limit,windowMs){
+  const start=Math.floor(Date.now()/windowMs)*windowMs;
+  const r=await env.DB.prepare("SELECT count FROM rate_limits WHERE k=? AND window_start=?").bind(String(key).slice(0,160),start).first();
+  return Number(r&&r.count||0)>=limit;
+}
+// Returns null when the X-Admin-Key is valid, otherwise a ready-to-return Response. Failed keys are counted per IP and lock that IP out after 10 misses/hour.
+async function adminKeyCheck(env,req,configuredValue,route){
+  const ip=clientIp(req),FK="admin-fail:"+ip;
+  if(await keyLocked(env,FK,10,3600000)){const rid=requestId();await recordObs(env,{kind:"rate_limited",route,status:429,requestId:rid,message:"Admin key lockout"});return adminJson(env,req,{error:"Too many failed attempts. Try again later.",requestId:rid},429);}
+  const supplied=String(req.headers.get("X-Admin-Key")||"");
+  if(!supplied)return adminJson(env,req,{error:"Admin key required"},401);
+  const [expectedHash,suppliedHash]=await Promise.all([sha(configuredValue),sha(supplied)]);
+  if(expectedHash!==suppliedHash){await keyLimit(env,FK,10,3600000);return adminJson(env,req,{error:"Invalid admin key"},401);}
+  return null;
+}
 async function notify(env,uid,kind,text,ref){try{await env.DB.prepare("INSERT INTO notifications(id,uid,kind,text,ref,at,read) VALUES(?,?,?,?,?,?,0)").bind(id(),uid,kind,String(text).slice(0,160),ref||null,Date.now()).run();await push(env,uid,{t:"notif"});}catch(e){console.error("notify",e&&e.message);}}
 async function push(env,uid,event){const stub=env.USER_STREAM.get(env.USER_STREAM.idFromName(uid));await stub.fetch("https://stream/push",{method:"POST",body:JSON.stringify(event)}).catch(()=>{});}
 const adminCors=(env,req)=>{
   const origin=String(req.headers.get("Origin")||"");
   const allowed=String(env.ADMIN_ORIGIN||"").trim();
   const h={"Access-Control-Allow-Methods":"GET,OPTIONS","Access-Control-Allow-Headers":"X-Admin-Key,Accept,Content-Type","Cache-Control":"no-store","Vary":"Origin"};
+  // Cross-origin browser access only for the exact ADMIN_ORIGIN. Unset = same-origin only (no wildcard).
   if(allowed&&origin===allowed)h["Access-Control-Allow-Origin"]=allowed;
-  else if(!allowed)h["Access-Control-Allow-Origin"]="*";
   return h;
 };
 const adminJson = (env,req,o,status=200) => json(o,status,adminCors(env,req));
@@ -192,10 +215,8 @@ async function adminSummary(env,req,url){
     const extra=hints.matches.length?` Found these admin-related bindings instead: ${hints.matches.join(", ")}.`:` No admin-related bindings were found on this Worker (it has ${hints.totalBindings} binding(s) total).`;
     return adminJson(env,req,{error:"Admin analytics is not configured. Add the Production secret ADMIN_ANALYTICS_KEY to the near-cash Worker, then redeploy."+extra,expectedNames:["ADMIN_ANALYTICS_KEY","ADMIN_ANALYTICS_K","ADMIN_KEY"],presentAdminBindings:hints.matches,totalBindings:hints.totalBindings},503);
   }
-  const supplied = String(req.headers.get("X-Admin-Key") || "");
-  if(!supplied) return adminJson(env,req,{error:"Admin key required"},401);
-  const [expectedHash,suppliedHash] = await Promise.all([sha(configured.value),sha(supplied)]);
-  if(expectedHash !== suppliedHash) return adminJson(env,req,{error:"Invalid admin key"},401);
+  const denied = await adminKeyCheck(env,req,configured.value,"/api/admin/summary");
+  if(denied) return denied;
   const rangeKey = resolveRange(url), cfg = RANGE_PRESETS[rangeKey];
   const now = Date.now(), since = now-cfg.ms, prevSince = since-cfg.ms;
   const [
@@ -288,24 +309,27 @@ async function adminSummary(env,req,url){
 }
 async function api(env,req,p,url){
   if(p==="admin/status") {
-    const rl=rateLimit("admin-status:"+clientIp(req),30,60000);
+    const rl=await keyLimit(env,"admin-status:"+clientIp(req),30,60000);
     if(!rl.ok){const rid=requestId();await recordObs(env,{kind:"rate_limited",route:"/api/admin/status",status:429,requestId:rid,message:"Admin status rate limit"});return adminJson(env,req,{error:"Too many requests",retryAfter:rl.retry,requestId:rid},429);}
     if(req.method === "OPTIONS") return new Response(null,{status:204,headers:{...securityHeaders,...adminCors(env,req)}});
     if(req.method !== "GET") return adminJson(env,req,{error:"Method not allowed"},405);
     const configured = getAdminAnalyticsKey(env);
+    // Public callers only learn whether the admin secret is configured. Binding names are shown only to a caller holding the valid admin key.
+    if(!configured.value||!req.headers.get("X-Admin-Key"))return adminJson(env,req,{ok:true,configured:!!configured.value});
+    const denied=await adminKeyCheck(env,req,configured.value,"/api/admin/status");
+    if(denied)return denied;
     const hints = adminEnvHints(env);
-    return adminJson(env,req,{ok:true,configured:!!configured.value,source:configured.name||null,expectedNames:["ADMIN_ANALYTICS_KEY","ADMIN_ANALYTICS_K","ADMIN_KEY"],presentAdminBindings:hints.matches,totalBindings:hints.totalBindings});
+    return adminJson(env,req,{ok:true,configured:true,source:configured.name||null,expectedNames:["ADMIN_ANALYTICS_KEY","ADMIN_ANALYTICS_K","ADMIN_KEY"],presentAdminBindings:hints.matches,totalBindings:hints.totalBindings});
   }
   if(p==="admin/observability") {
-    const rl=rateLimit("admin-observability:"+clientIp(req),30,60000);
+    const rl=await keyLimit(env,"admin-observability:"+clientIp(req),30,60000);
     if(!rl.ok){const rid=requestId();await recordObs(env,{kind:"rate_limited",route:"/api/admin/observability",status:429,requestId:rid,message:"Admin observability rate limit"});return adminJson(env,req,{error:"Too many requests",retryAfter:rl.retry,requestId:rid},429);}
     if(req.method === "OPTIONS") return new Response(null,{status:204,headers:{...securityHeaders,...adminCors(env,req)}});
     if(req.method !== "GET") return adminJson(env,req,{error:"Method not allowed"},405);
     const configured=getAdminAnalyticsKey(env);
     if(!configured.value)return adminJson(env,req,{error:"Admin analytics is not configured"},503);
-    const supplied=String(req.headers.get("X-Admin-Key")||"");
-    const [expectedHash,suppliedHash]=await Promise.all([sha(configured.value),sha(supplied)]);
-    if(!supplied || expectedHash!==suppliedHash)return adminJson(env,req,{error:supplied?"Invalid admin key":"Admin key required"},401);
+    const denied=await adminKeyCheck(env,req,configured.value,"/api/admin/observability");
+    if(denied)return denied;
     const since=Date.now()-24*86400000;
     const [counts,recent]=await Promise.all([
       env.DB.prepare("SELECT kind,COUNT(*) AS c FROM observability_events WHERE at>=? GROUP BY kind ORDER BY c DESC").bind(since).all(),
@@ -314,7 +338,7 @@ async function api(env,req,p,url){
     return adminJson(env,req,{ok:true,rangeHours:24,generatedAt:Date.now(),counts:counts.results||[],recent:recent.results||[]},200);
   }
   if(p==="admin/summary") {
-    const rl=rateLimit("admin:"+clientIp(req),60,60000);
+    const rl=await keyLimit(env,"admin:"+clientIp(req),60,60000);
     if(!rl.ok){const rid=requestId();await recordObs(env,{kind:"rate_limited",route:"/api/admin/summary",status:429,requestId:rid,message:"Admin summary rate limit"});return adminJson(env,req,{error:"Too many requests",retryAfter:rl.retry,requestId:rid},429);}
     return adminSummary(env,req,url);
   }
@@ -328,7 +352,7 @@ async function api(env,req,p,url){
   if(!publicRl.ok){const rid=requestId();await recordObs(env,{kind:"rate_limited",route:"/api/"+p,status:429,requestId:rid,message:"API rate limit"});return json({error:"Too many requests. Please try again shortly.",requestId:rid},429);}
   if(p==="guest"&&m==="POST"){
     if(env.REQUIRE_SIGNIN==="true")err("Sign in required",403);
-    if(!guestOk(req.headers.get("CF-Connecting-IP")||"?"))err("Too many new accounts from this network. Try again later.",429);
+    if(!(await keyLimit(env,"guest-ip:"+clientIp(req),20,3600000)).ok)err("Too many new accounts from this network. Try again later.",429);
     const uid=id(),name="Guest "+String(crypto.getRandomValues(new Uint32Array(1))[0]%9000+1000);
     await env.DB.prepare("INSERT INTO users(id,phone,name,done,created) VALUES(?,?,?,?,?)").bind(uid,"guest:"+uid,name,0,Date.now()).run();
     const token=crypto.randomUUID()+crypto.randomUUID(),h=await sha(token);
@@ -337,28 +361,36 @@ async function api(env,req,p,url){
   }
   if(p==="otp"&&m==="POST"){
     const ph=normPhone(env,b.phone); if(!/^\+\d{11,14}$/.test(ph))err("Enter a valid phone number");
+    const dev=devOtpOn(env,url);
+    if(!dev){
+      if(!(await keyLimit(env,"otp-ip:"+clientIp(req),10,3600000)).ok)err("Too many code requests from this network. Try again later.",429);
+      if(!(await keyLimit(env,"otp-phone:"+ph,5,3600000)).ok)err("Too many code requests for this number. Try again later.",429);
+    }
     const old=await env.DB.prepare("SELECT phone FROM otps WHERE phone=? AND exp>? ").bind(ph,Date.now()).first();
-    if(old&&env.DEV_OTP!=="true")err("Please wait before requesting another code",429);
+    if(old&&!dev)err("Please wait before requesting another code",429);
     const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%900000+100000), h=await sha(code+ph);
     await env.DB.prepare("INSERT INTO otps(phone,hash,exp,tries) VALUES(?,?,?,0) ON CONFLICT(phone) DO UPDATE SET hash=excluded.hash,exp=excluded.exp,tries=0").bind(ph,h,Date.now()+300000).run();
-    if(env.DEV_OTP==="true")return json({ok:true,devCode:code});
-    await sendSms(env,ph,code); return json({ok:true});
+    if(dev)return json({ok:true,devCode:code});
+    try{await sendSms(env,ph,code);}catch(e){await env.DB.prepare("DELETE FROM otps WHERE phone=?").bind(ph).run().catch(()=>{});throw e;}
+    return json({ok:true});
   }
   if(p==="verify"&&m==="POST"){
+    if(!(await keyLimit(env,"verify-ip:"+clientIp(req),30,3600000)).ok)err("Too many attempts from this network. Try again later.",429);
     const ph=normPhone(env,b.phone), o=await env.DB.prepare("SELECT * FROM otps WHERE phone=?").bind(ph).first();
     if(!o||o.exp<Date.now())err("Code expired. Request a new one.");
     if(o.tries>=5){await env.DB.prepare("DELETE FROM otps WHERE phone=?").bind(ph).run();err("Too many attempts. Request a new code.",429);}
     await env.DB.prepare("UPDATE otps SET tries=tries+1 WHERE phone=?").bind(ph).run();
     if(o.hash!==await sha(String(b.code)+ph))err("That code is wrong");
     if(b.adult!==true)err("You must be 18 or older");
-    let u=await env.DB.prepare("SELECT * FROM users WHERE phone=?").bind(ph).first(); const nm=String(b.name||"").trim().slice(0,40); if(!u&&!nm)err("Enter your name");
+    let u=await env.DB.prepare("SELECT * FROM users WHERE phone=?").bind(ph).first(); const nm=clean(b.name).trim().slice(0,40); if(!u&&!nm)err("Enter your name");
     await env.DB.prepare("DELETE FROM otps WHERE phone=?").bind(ph).run();
     if(!u){u={id:id(),phone:ph,name:nm,done:0,created:Date.now()};await env.DB.prepare("INSERT INTO users(id,phone,name,done,created) VALUES(?,?,?,?,?)").bind(u.id,u.phone,u.name,0,u.created).run();}
     const token=crypto.randomUUID()+crypto.randomUUID(), h=await sha(token);await env.DB.prepare("INSERT INTO sessions(token_hash,uid,exp) VALUES(?,?,?)").bind(h,u.id,Date.now()+2592e6).run();
     return json({token,me:pubU(u,await repOf(env,u.id))});
   }
-  const {u}=await getUser(env,req);
-  if(p==="profile"&&m==="POST"){const nm=String(b.name||"").trim().slice(0,40);if(!nm)err("Enter a name");await env.DB.prepare("UPDATE users SET name=? WHERE id=?").bind(nm,u.id).run();await notify(env,u.id,"profile","Your display name is now "+nm+".");return json({ok:true,name:nm});}
+  const {u,h:sessionHash}=await getUser(env,req);
+  if(p==="logout"&&m==="POST"){await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(sessionHash).run();return json({ok:true});}
+  if(p==="profile"&&m==="POST"){const nm=clean(b.name).trim().slice(0,40);if(!nm)err("Enter a name");await env.DB.prepare("UPDATE users SET name=? WHERE id=?").bind(nm,u.id).run();await notify(env,u.id,"profile","Your display name is now "+nm+".");return json({ok:true,name:nm});}
   if(p==="privacy/export"&&m==="GET")return privacyExport(env,req,u);
   if(p==="privacy/location/delete"&&m==="POST")return privacyLocationDelete(env,req,u);
   if(p==="privacy/delete"&&m==="POST")return privacyDelete(env,req,u,b);
@@ -370,7 +402,7 @@ async function api(env,req,p,url){
     return stub.fetch(new Request("https://stream/stream"));
   }
   if(p==="location"&&m==="POST"){
-    const la=Number(b.lat),lo=Number(b.lng);if(!Number.isFinite(la)||!Number.isFinite(lo)||Math.abs(la)>90||Math.abs(lo)>180)err("Invalid location");
+    const la=b.lat,lo=b.lng;if(typeof la!=="number"||typeof lo!=="number"||!Number.isFinite(la)||!Number.isFinite(lo)||Math.abs(la)>90||Math.abs(lo)>180)err("Invalid location");
     await env.DB.prepare("UPDATE users SET lat=?,lng=?,at=? WHERE id=?").bind(+la.toFixed(4),+lo.toFixed(4),Date.now(),u.id).run();if(u.lat==null)await notify(env,u.id,"location","Location is on. You can now see cash nearby.");return json({ok:true});
   }
   if(p==="nearby"){
@@ -385,14 +417,14 @@ async function api(env,req,p,url){
     await userActionLimit(env,u.id,"listing_create",10,10*60000);
     if(u.lat==null)err("Turn on location first");const amt=Math.floor(+b.amount),mins=Math.floor(+b.minutes);if(!["have","need"].includes(b.type)||!(amt>=1&&amt<=5000)||!(mins>=5&&mins<=240))err("Invalid post");
     const count=await env.DB.prepare("SELECT COUNT(*) c FROM listings WHERE uid=? AND status='open' AND exp>?").bind(u.id,Date.now()).first();if((count?.c||0)>=3)err("You can have up to 3 live posts");
-    const l={id:id(),uid:u.id,type:b.type,amount:amt,exp:Date.now()+mins*60000,status:"open",area:String(b.area||"").trim().slice(0,60)};await env.DB.prepare("INSERT INTO listings(id,uid,type,amount,exp,status,area) VALUES(?,?,?,?,?,?,?)").bind(l.id,l.uid,l.type,l.amount,l.exp,l.status,l.area||null).run();await notify(env,u.id,"post",(l.type==="have"?"Your cash offer of ₹":"Your cash request of ₹")+l.amount+" is live for "+mins+" min.",l.id);await broadcastListings(env);return json(l);
+    const l={id:id(),uid:u.id,type:b.type,amount:amt,exp:Date.now()+mins*60000,status:"open",area:clean(b.area).trim().slice(0,60)};await env.DB.prepare("INSERT INTO listings(id,uid,type,amount,exp,status,area) VALUES(?,?,?,?,?,?,?)").bind(l.id,l.uid,l.type,l.amount,l.exp,l.status,l.area||null).run();await notify(env,u.id,"post",(l.type==="have"?"Your cash offer of ₹":"Your cash request of ₹")+l.amount+" is live for "+mins+" min.",l.id);await broadcastListings(env);return json(l);
   }
   if(p==="listings/cancel"&&m==="POST"){
-    const l=await env.DB.prepare("SELECT * FROM listings WHERE id=? AND uid=? AND status='open'").bind(b.id,u.id).first();if(!l)err("Not found",404);await env.DB.prepare("UPDATE listings SET status='cancelled' WHERE id=?").bind(b.id).run();await notify(env,u.id,"post","You cancelled your ₹"+l.amount+" post.");await broadcastListings(env);return json({ok:true});
+    const l=await env.DB.prepare("SELECT * FROM listings WHERE id=? AND uid=? AND status='open'").bind(String(b.id||"").slice(0,64),u.id).first();if(!l)err("Not found",404);await env.DB.prepare("UPDATE listings SET status='cancelled' WHERE id=?").bind(l.id).run();await notify(env,u.id,"post","You cancelled your ₹"+l.amount+" post.");await broadcastListings(env);return json({ok:true});
   }
   if(p==="threads"&&m==="POST"){
     await userActionLimit(env,u.id,"connect",20,10*60000);
-    const l=await env.DB.prepare("SELECT * FROM listings WHERE id=? AND status='open' AND exp>?").bind(b.listingId,Date.now()).first();if(!l||l.uid===u.id||await blocked(env,u.id,l.uid))err("This post is no longer available",409);
+    const l=await env.DB.prepare("SELECT * FROM listings WHERE id=? AND status='open' AND exp>?").bind(String(b.listingId||"").slice(0,64),Date.now()).first();if(!l||l.uid===u.id||await blocked(env,u.id,l.uid))err("This post is no longer available",409);
     const t={id:id(),lid:l.id,amount:l.amount,type:l.type,a:l.uid,b:u.id,status:"open",confirmed:"[]",created:Date.now()};
     const claimed=await env.DB.prepare("UPDATE listings SET status='matched' WHERE id=? AND status='open' AND exp>? AND uid<>?").bind(l.id,Date.now(),u.id).run();
     if(Number(claimed?.meta?.changes||0)!==1)err("This post is no longer available",409);
@@ -415,7 +447,7 @@ async function api(env,req,p,url){
       return json({id:t.id,amount:t.amount,status:t.status,confirmed,other:pubU(o,rep),pin,myRating:myRatingRow?myRatingRow.stars:null,canRate:t.status==="completed"&&!myRatingRow,msgs:(msgs.results||[]).reverse()});}
     if(P[2]==="messages"&&m==="POST"){
       await userActionLimit(env,u.id,"message",30,60*1000);
-      const text=String(b.text||"").trim().slice(0,500);if(!text)err("Type a message");if(t.status!=="open"||await blocked(env,u.id,oid))err("This chat is closed",409);
+      const text=clean(b.text).trim().slice(0,500);if(!text)err("Type a message");if(t.status!=="open"||await blocked(env,u.id,oid))err("This chat is closed",409);
       const idm=id(),at=Date.now();await env.DB.prepare("INSERT INTO messages(id,tid,from_uid,text,at) VALUES(?,?,?,?,?)").bind(idm,t.id,u.id,text,at).run();const msg={id:idm,tid:t.id,from:u.id,text,at};await push(env,oid,{t:"msg",threadId:t.id,msg,from:u.name});await notify(env,oid,"message","New message from "+u.name+": "+text.slice(0,60),t.id);return json(msg);
     }
     if(P[2]==="complete"&&m==="POST"){
@@ -476,7 +508,7 @@ async function api(env,req,p,url){
   }
   if(p==="report"&&m==="POST"){
     await userActionLimit(env,u.id,"report",5,60*60000);
-    const t=await env.DB.prepare("SELECT * FROM threads WHERE id=? AND (a=? OR b=?)").bind(b.threadId,u.id,u.id).first();
+    const t=await env.DB.prepare("SELECT * FROM threads WHERE id=? AND (a=? OR b=?)").bind(String(b.threadId||"").slice(0,64),u.id,u.id).first();
     if(!t)err("Not found",404);
     const oid=t.a===u.id?t.b:t.a;
     if(!["scam","harassment","unsafe","other"].includes(b.reason))err("Choose a reason");
@@ -517,4 +549,4 @@ export class UserStream extends DurableObject {
     return new Response("Not found",{status:404});
   }
 }
-export default {async fetch(req,env){const url=new URL(req.url);if(url.pathname==="/index.html"){return Response.redirect(new URL("/",url),301);}if(url.pathname==="/healthz"){let db=false,schema=false,error=null;const rid=requestId();try{await ensureSchema(env);db=true;schema=!!await env.DB.prepare("SELECT name FROM sqlite_master WHERE name='otps'").first();}catch(e){error=String(e&&e.message||e).slice(0,160);await recordObs(env,{kind:"health_failure",route:"/healthz",status:503,requestId:rid,message:error});}return json({ok:db&&schema,v:12,db,schema,devOtp:env.DEV_OTP==="true",error,requestId:rid});}if(url.pathname.startsWith("/api/")){const rid=requestId();try{await ensureSchema(env);return await api(env,req,url.pathname.slice(5),url);}catch(e){const status=Number(e&&e.status)||500;if(!e.status){console.error("Worker error:",e&&e.stack||e);await recordObs(env,{kind:"server_error",route:url.pathname,status,requestId:rid,message:e&&e.message||"Unhandled server error"});}return json({error:e.status?e.message:"Server error",requestId:rid},status);}}const res=await env.ASSETS.fetch(req);const headers=new Headers(res.headers);for(const [k,v] of Object.entries(securityHeaders)){if(!headers.has(k))headers.set(k,v);}if(/^\/admin\.(html|js|css)$/.test(url.pathname)){headers.set("Cache-Control","no-store");}else if(res.ok&&url.pathname!=="/"&&url.pathname!=="/index.html"){headers.set("Cache-Control","public, max-age=300, stale-while-revalidate=86400");}else{headers.set("Cache-Control","no-cache");}headers.set("X-Content-Type-Options","nosniff");return new Response(res.body,{status:res.status,statusText:res.statusText,headers});}};
+export default {async fetch(req,env){const url=new URL(req.url);if(url.pathname==="/index.html"){return Response.redirect(new URL("/",url),301);}if(url.pathname==="/healthz"){let db=false,schema=false,error=null;const rid=requestId();try{await ensureSchema(env);db=true;schema=!!await env.DB.prepare("SELECT name FROM sqlite_master WHERE name='otps'").first();}catch(e){error=String(e&&e.message||e).slice(0,160);await recordObs(env,{kind:"health_failure",route:"/healthz",status:503,requestId:rid,message:error});}return json({ok:db&&schema,v:12,db,schema,devOtp:devOtpOn(env,url),devOtpConfigured:env.DEV_OTP==="true",error,requestId:rid});}if(url.pathname.startsWith("/api/")){const rid=requestId();try{await ensureSchema(env);return await api(env,req,url.pathname.slice(5),url);}catch(e){const status=Number(e&&e.status)||500;if(!e.status){console.error("Worker error:",e&&e.stack||e);await recordObs(env,{kind:"server_error",route:url.pathname,status,requestId:rid,message:e&&e.message||"Unhandled server error"});}return json({error:e.status?e.message:"Server error",requestId:rid},status);}}const res=await env.ASSETS.fetch(req);const headers=new Headers(res.headers);for(const [k,v] of Object.entries(securityHeaders)){if(!headers.has(k))headers.set(k,v);}if(/^\/admin\.(html|js|css)$/.test(url.pathname)){headers.set("Cache-Control","no-store");}else if(res.ok&&url.pathname!=="/"&&url.pathname!=="/index.html"){headers.set("Cache-Control","public, max-age=300, stale-while-revalidate=86400");}else{headers.set("Cache-Control","no-cache");}headers.set("X-Content-Type-Options","nosniff");return new Response(res.body,{status:res.status,statusText:res.statusText,headers});}};
