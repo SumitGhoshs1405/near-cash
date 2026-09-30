@@ -1,7 +1,7 @@
 {
   "name": "near-cash-cloudflare",
   "private": true,
-  "version": "1.1.0-security-hardened",
+  "version": "1.2.0-legal-safety-hardened",
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",

@@ -1,3 +1,15 @@
+# Near Cash — v20 Legal-Safety Hardened
+
+This build adds stronger safety and trust controls for the current non-custodial discovery/matching model. It does not provide legal advice or guarantee regulatory compliance. Indian counsel should review the live business model before public real-money scaling.
+
+Key v20 changes:
+- Removed misleading `VERIFIED` labels from unverified guest profiles.
+- Removed hard-coded reliability/completed-transaction claims from the match UI.
+- Renamed the meetup/confirmation PIN consistently so it is not presented as proof of payment or fund authenticity.
+- Added explicit pre-meet warnings about counterfeit, stolen, suspicious and illegal funds.
+- Expanded report reasons for counterfeit currency, suspicious funds, fraud, impersonation and privacy abuse.
+- Added a report-reason/time index for moderation review.
+
 # Near Cash — Cloudflare Free Deployment
 
 This version moves the Node/JSON-file backend to Cloudflare Workers + D1 + SQLite-backed Durable Objects while keeping the existing frontend and API paths. It removes the Render Free cold-start page.

@@ -128,6 +128,7 @@ CREATE INDEX IF NOT EXISTS idx_listings_exp_status ON listings(status, exp);
 CREATE INDEX IF NOT EXISTS idx_threads_status_created ON threads(status, created);
 CREATE INDEX IF NOT EXISTS idx_notifications_uid_read_at ON notifications(uid, read, at);
 CREATE INDEX IF NOT EXISTS idx_reports_by_tid_at ON reports(by_uid, tid, at);
+CREATE INDEX IF NOT EXISTS idx_reports_reason_at ON reports(reason, at);
 
 CREATE TABLE IF NOT EXISTS ratings (
   tid TEXT NOT NULL,
