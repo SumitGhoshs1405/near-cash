@@ -511,7 +511,7 @@ async function api(env,req,p,url){
     const t=await env.DB.prepare("SELECT * FROM threads WHERE id=? AND (a=? OR b=?)").bind(String(b.threadId||"").slice(0,64),u.id,u.id).first();
     if(!t)err("Not found",404);
     const oid=t.a===u.id?t.b:t.a;
-    if(!["scam","harassment","unsafe","other"].includes(b.reason))err("Choose a reason");
+    if(!["scam","counterfeit","suspicious_funds","fraud","harassment","unsafe","impersonation","privacy","other"].includes(b.reason))err("Choose a reason");
     const recent=await env.DB.prepare("SELECT 1 FROM reports WHERE by_uid=? AND tid=? AND at>? LIMIT 1").bind(u.id,t.id,Date.now()-86400000).first();
     if(recent)err("You already reported this conversation recently",409);
     const last=await env.DB.prepare("SELECT id,tid,from_uid AS \"from\",text,at FROM messages WHERE tid=? ORDER BY at DESC LIMIT 20").bind(t.id).all();
