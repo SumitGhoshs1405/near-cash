@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS listings (
   type TEXT NOT NULL CHECK(type IN ('have','need')),
   amount INTEGER NOT NULL,
   exp INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'open',
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','matched','cancelled')),
   area TEXT,
   FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS threads (
   type TEXT NOT NULL,
   a TEXT NOT NULL,
   b TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'open',
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','matched','completed','closed')),
   confirmed TEXT NOT NULL DEFAULT '[]',
   created INTEGER NOT NULL,
   pin_hash TEXT,

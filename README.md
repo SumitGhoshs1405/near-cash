@@ -2,6 +2,8 @@
 
 This build adds stronger safety and trust controls for the current non-custodial discovery/matching model. It does not provide legal advice or guarantee regulatory compliance. Indian counsel should review the live business model before public real-money scaling.
 
+Key v22 security hardening: coarse location bands/sectors (no exact distance/bearing in API), durable per-user/IP throttling for location and nearby search, implausible location-jump rejection, __Host session cookies, cross-site authenticated request rejection, and regression coverage for these controls.
+
 Key v20 changes:
 - Removed misleading `VERIFIED` labels from unverified guest profiles.
 - Removed hard-coded reliability/completed-transaction claims from the match UI.
@@ -68,7 +70,7 @@ The endpoint supports CORS for the separate dashboard and does not expose phone 
 
 ## Security hardening (v10)
 
-The Worker now applies API rate limiting, strict Bearer-token authentication for authenticated API requests, security response headers, production-safe error responses with request IDs, race-safe listing claiming and meetup-PIN completion, and authenticated streaming without putting the session token in the stream URL.
+The Worker now applies API rate limiting, strict Bearer-token authentication for authenticated API requests, security response headers, production-safe error responses with request IDs, race-safe listing claiming, single-use meetup-PIN verification, and two-party exchange completion, and authenticated streaming without putting the session token in the stream URL.
 
 `ADMIN_ORIGIN` is an optional Worker environment variable. If set, browser access to the admin analytics API is restricted to that exact origin. **If it is not set, no cross-origin access is allowed (no wildcard).** Set `ADMIN_ORIGIN` to the exact origin of your admin dashboard (for example `https://near-cash-admin.pages.dev`, no trailing slash) or the dashboard's browser calls will be blocked. The admin key is always required for analytics data.
 
@@ -100,8 +102,9 @@ The new `observability_events` table is included in `schema.sql`, and `ensureSch
 
 ## Upgrades 6–9 consolidated (v10)
 - Performance/scalability: bounded nearby/thread reads and additional D1 indexes.
-- Privacy/data controls: authenticated export, location removal, and explicit DELETE account removal endpoints.
+- Privacy/data controls: authenticated export, location removal, automatic 30-minute location expiry, scheduled cleanup, and explicit DELETE account removal endpoints.
 - PWA/UX resilience: v10 service worker, offline fallback, safer static-asset caching, and update handling.
+- Recovery/privacy hardening: encrypted daily D1 backups to private R2, 30-day rolling retention, integrity metadata, restore runbook, and short-lived location storage.
 - Commercial/launch readiness: privacy/terms/security templates, robots.txt and security.txt launch-readiness files; add the real production sitemap/contact before launch.
 - Existing security, trust & safety, observability, analytics, and OTP behavior retained.
 - Legal/compliance templates require production-specific review before launch.

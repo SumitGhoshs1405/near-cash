@@ -3,6 +3,9 @@
   "name": "near-cash",
   "main": "src/index.js",
   "compatibility_date": "2026-01-15",
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
   "vars": {
     "REQUIRE_SIGNIN": "true"
   },
