@@ -44,7 +44,7 @@ if (!/Content-Security-Policy:/.test(headers)) fail('public/_headers is missing 
 for (const d of ["object-src 'none'", "frame-ancestors 'none'", "base-uri 'none'", "Cross-Origin-Opener-Policy: same-origin", "Cross-Origin-Resource-Policy: same-origin"]) if (!headers.includes(d)) fail(`CSP is missing ${d}.`);
 
 const sw = await read('public/sw.js');
-if (!/near-cash-v18/.test(sw)) fail('Service worker cache must be version-bumped for the guest-home release.');
+if (!/near-cash-v19/.test(sw)) fail('Service worker cache must be version-bumped for the guest-home release.');
 
 // 4. git hygiene
 const gi = await read('.gitignore').catch(() => '');
