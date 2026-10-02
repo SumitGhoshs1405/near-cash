@@ -32,15 +32,25 @@ async function locate(app, token, lat = 12.9716, lng = 77.5946) {
 }
 
 /* ---------- 1. Hide secrets / DEV_OTP ---------- */
-t('DEV_OTP=true on a deployed hostname NEVER returns the sign-in code', async () => {
+t('DEV_OTP=true (Cloudflare variable) shows the Verification Code on a deployed hostname and it signs you in', async () => {
   const app = await boot(root, { DEV_OTP: 'true' });
   const r = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
+  assert.equal(r.status, 200);
+  assert.match(r.body.devCode, /^\d{6}$/);
+  const v = await j(await app.call('POST', PROD + '/api/verify', { body: { phone: '+919876543210', code: r.body.devCode, name: 'Asha', adult: true } }));
+  assert.equal(v.status, 200);
+  const h = await j(await app.call('GET', PROD + '/healthz'));
+  assert.equal(h.body.devOtp, true);
+});
+
+t('without DEV_OTP a deployed hostname never returns the code', async () => {
+  const app = await boot(root, {});
+  const r = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
   assert.equal(r.body.devCode, undefined);
-  assert.equal(r.status, 503); // provider unavailable -> generic response, never an internal configuration error
+  assert.equal(r.status, 503);
   assert.doesNotMatch(String(r.body.error||''), /SMS provider not configured/i);
   const h = await j(await app.call('GET', PROD + '/healthz'));
   assert.equal(h.body.devOtp, false);
-  assert.equal(h.body.devOtpConfigured, true);
 });
 
 t('failed SMS send does not lock the number out for 5 minutes', async () => {
