@@ -23,11 +23,28 @@ if (/Access-Control-Allow-Origin"\]\s*=\s*"\*"/.test(worker)) fail('Worker sets 
 if (!/devOtpOn/.test(worker)) fail('Worker no longer restricts DEV_OTP to localhost.');
 if (!/Content-Security-Policy/.test(worker)) fail('Worker API responses lack a Content-Security-Policy header.');
 if (/env\.DEV_OTP===\"true\"\)return json\(\{ok:true,devCode/.test(worker)) fail('Worker returns devCode without the localhost guard.');
+if (!/location_update/.test(worker) || !/nearby_query/.test(worker) || !/location-ip:/.test(worker) || !/nearby-ip:/.test(worker)) fail('Location and nearby endpoints lack durable per-user/IP abuse limits.');
+if (!/__Host-nc_session/.test(worker)) fail('Session cookie should use the __Host- prefix.');
+if (/return json\(\{token[,}]/.test(worker)) fail('Authenticated sign-in responses must not expose the raw session token; use the HttpOnly cookie.');
+if (!/__Host-nc_session/.test(worker) || !/Secure; HttpOnly; SameSite=Lax/.test(worker)) fail('Session cookie must remain Secure, HttpOnly, SameSite=Lax.');
+if (!/distanceBand/.test(worker) || !/directionSector/.test(worker)) fail('Nearby responses must use coarse distance/direction privacy buckets.');
+if (!/Cross-Origin-Opener-Policy/.test(worker) || !/Cross-Origin-Resource-Policy/.test(worker)) fail('Worker responses must include cross-origin isolation protections.');
+if (!/equalHex/.test(worker)) fail('Security-sensitive hash comparisons must use the constant-work helper.');
+if (!/DELETE FROM reports WHERE who_uid=\? OR by_uid=\?/.test(worker)) fail('Account deletion must remove reports created by and targeting the deleted account.');
+if (!/DELETE FROM messages WHERE tid IN \(SELECT id FROM threads WHERE a=\? OR b=\?\)/.test(worker)) fail('Account deletion must remove all messages in the deleted account\'s threads.');
+if (!/DELETE FROM ratings WHERE tid IN \(SELECT id FROM threads WHERE a=\? OR b=\?\) OR rater_uid=\? OR ratee_uid=\?/.test(worker)) fail('Account deletion must remove ratings linked to the deleted account.');
+if (!/DELETE FROM otps WHERE phone=\?/.test(worker)) fail('Account deletion must remove OTP material keyed by the deleted account\'s phone.');
+if (!/Set-Cookie.*clearSessionCookie|clearSessionCookie\(\)/.test(worker)) fail('Account deletion must clear the authenticated session cookie.');
+if (/LIMIT 200.*threads|SELECT id FROM threads WHERE a=\? OR b=\?.*LIMIT 200/.test(worker)) fail('Account deletion must not cap thread cleanup at 200 rows.');
+if (/items\.push\(\{[^}]*\bkm:|items\.push\(\{[^}]*\bbrg:/.test(worker)) fail('Nearby response must not expose precise km/brg fields.');
 
 // 3. static headers
 const headers = await read('public/_headers').catch(() => '');
 if (!/Content-Security-Policy:/.test(headers)) fail('public/_headers is missing or has no Content-Security-Policy.');
-for (const d of ["object-src 'none'", "frame-ancestors 'none'", "base-uri 'none'"]) if (!headers.includes(d)) fail(`CSP is missing ${d}.`);
+for (const d of ["object-src 'none'", "frame-ancestors 'none'", "base-uri 'none'", "Cross-Origin-Opener-Policy: same-origin", "Cross-Origin-Resource-Policy: same-origin"]) if (!headers.includes(d)) fail(`CSP is missing ${d}.`);
+
+const sw = await read('public/sw.js');
+if (!/near-cash-v16/.test(sw)) fail('Service worker cache must be version-bumped for the hardened release.');
 
 // 4. git hygiene
 const gi = await read('.gitignore').catch(() => '');
