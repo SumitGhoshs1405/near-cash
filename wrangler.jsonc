@@ -7,7 +7,7 @@
     "crons": ["*/15 * * * *"]
   },
   "vars": {
-    "REQUIRE_SIGNIN": "true"
+    "REQUIRE_SIGNIN": "false"
   },
   "assets": {
     "directory": "./public",
