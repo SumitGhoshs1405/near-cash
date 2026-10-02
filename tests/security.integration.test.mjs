@@ -36,7 +36,8 @@ t('DEV_OTP=true on a deployed hostname NEVER returns the sign-in code', async ()
   const app = await boot(root, { DEV_OTP: 'true' });
   const r = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
   assert.equal(r.body.devCode, undefined);
-  assert.equal(r.status, 501); // no SMS provider configured -> refuses instead of leaking
+  assert.equal(r.status, 503); // provider unavailable -> generic response, never an internal configuration error
+  assert.doesNotMatch(String(r.body.error||''), /SMS provider not configured/i);
   const h = await j(await app.call('GET', PROD + '/healthz'));
   assert.equal(h.body.devOtp, false);
   assert.equal(h.body.devOtpConfigured, true);
@@ -45,10 +46,11 @@ t('DEV_OTP=true on a deployed hostname NEVER returns the sign-in code', async ()
 t('failed SMS send does not lock the number out for 5 minutes', async () => {
   const app = await boot(root, {});
   const first = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
-  assert.equal(first.status, 501);
+  assert.equal(first.status, 503);
   assert.equal(app.DB.raw.prepare('SELECT COUNT(*) c FROM otps').get().c, 0);
   const second = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
-  assert.equal(second.status, 501); // not 429 "please wait"
+  assert.equal(second.status, 503); // not 429 "please wait"
+  assert.doesNotMatch(String(second.body.error||''), /SMS provider not configured/i);
 });
 
 t('DEV_OTP works on localhost only, and the code really signs you in', async () => {

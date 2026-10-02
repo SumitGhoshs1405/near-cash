@@ -19,6 +19,16 @@ const read = async file => fs.readFile(path.join(root, file), 'utf8');
   assert.doesNotMatch(live, /\/api\/stream\?token=/);
 });
 
+
+test('auth gate can be closed to view the homepage and offers guest continuation', () => {
+  has(live, /function continueAsGuest\(\)/);
+  has(live, /function closeAuth\(\)/);
+  has(live, /Continue as guest/);
+  has(live, /View homepage without signing in/);
+  has(live, /auth-close/);
+  has(live, /S\.preview/);
+});
+
 test('Bearer authentication remains required', () => {
   has(worker, /Authorization/);
   has(worker, /Bearer\\s\+\[\^\\s\]\+/);
@@ -224,4 +234,12 @@ test('security.txt meets RFC 9116 (Contact and Expires present)', async () => {
   const txt = await fs.readFile(path.join(root, 'public/.well-known/security.txt'), 'utf8');
   has(txt, /^Contact: mailto:nearcash\.info@gmail\.com$/m);
   has(txt, /^Expires: \d{4}-\d{2}-\d{2}T/m);
+});
+
+
+test('auth UI does not expose internal SMS provider configuration errors', async () => {
+  const source = await fs.readFile(path.join(root, 'public', 'live.js'), 'utf8');
+  assert.doesNotMatch(source, /SMS provider not configured/);
+  assert.match(source, /Phone verification is temporarily unavailable/);
+  assert.match(source, /errKind==='info'/);
 });
