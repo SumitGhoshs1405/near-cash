@@ -34,8 +34,8 @@ async function recordObs(env,{kind,route,status,requestId,message}){
 async function sha(s){ const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(s))); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
 const equalHex=(a,b)=>{a=String(a);b=String(b);if(a.length!==b.length)return false;let d=0;for(let i=0;i<a.length;i++)d|=a.charCodeAt(i)^b.charCodeAt(i);return d===0;};
 const clean=v=>String(v??"").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,"");
-// DEV_OTP (code shown in the API response) is honoured ONLY when the request host is local, so a stray DEV_OTP=true in production can never expose sign-in codes.
-const devOtpOn=(env,url)=>env.DEV_OTP==="true"&&/^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
+// DEV_OTP: when the Cloudflare variable/secret DEV_OTP is exactly "true", the sign-in code is shown on screen as "Verification Code" (no SMS needed). Remove or set DEV_OTP to anything else to switch back to real SMS.
+const devOtpOn=(env,url)=>env.DEV_OTP==="true";
 const escPhone = s => String(s||"").replace(/[\s-]/g,"");
 const LOCATION_TTL_MS=30*60*1000;
 const LOCATION_MIN_INTERVAL_MS=10000;
