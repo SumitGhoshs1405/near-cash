@@ -13,16 +13,16 @@ const read = f => fs.readFile(path.join(root, f), 'utf8');
 const wr = (await read('wrangler.jsonc')).replace(/^\s*\/\/.*$/gm, '');
 let cfg; try { cfg = JSON.parse(wr); } catch (e) { fail('wrangler.jsonc is not valid JSON: ' + e.message); cfg = {}; }
 const vars = cfg.vars || {};
-if (String(vars.DEV_OTP).toLowerCase() === 'true') fail('wrangler.jsonc sets DEV_OTP=true (would expose sign-in codes).');
-if (vars.REQUIRE_SIGNIN !== 'true') fail('wrangler.jsonc must set vars.REQUIRE_SIGNIN to "true" (no anonymous guest accounts in production).');
+if (String(vars.DEV_OTP).toLowerCase() === 'true') fail('wrangler.jsonc sets DEV_OTP=true in plain config; keep DEV_OTP in the Cloudflare dashboard/secret instead.');
+if (vars.REQUIRE_SIGNIN !== 'false') fail('wrangler.jsonc must set vars.REQUIRE_SIGNIN to "false" so the app can start a guest session on the home screen.');
 for (const k of Object.keys(vars)) if (/SECRET|TOKEN|PASSWORD|API_?KEY|AUTH|SID|PRIVATE/i.test(k)) fail(`wrangler.jsonc vars.${k} looks like a secret; use "wrangler secret put ${k}" instead.`);
 
 // 2. worker source guards
 const worker = await read('src/index.js');
 if (/Access-Control-Allow-Origin"\]\s*=\s*"\*"/.test(worker)) fail('Worker sets a wildcard Access-Control-Allow-Origin.');
-if (!/devOtpOn/.test(worker)) fail('Worker no longer restricts DEV_OTP to localhost.');
+if (!/devOtpOn/.test(worker)) fail('Worker no longer has the DEV_OTP switch (devOtpOn).');
 if (!/Content-Security-Policy/.test(worker)) fail('Worker API responses lack a Content-Security-Policy header.');
-if (/env\.DEV_OTP===\"true\"\)return json\(\{ok:true,devCode/.test(worker)) fail('Worker returns devCode without the localhost guard.');
+if (/env\.DEV_OTP===\"true\"\)return json\(\{ok:true,devCode/.test(worker)) fail('Worker returns devCode without going through devOtpOn.');
 if (!/location_update/.test(worker) || !/nearby_query/.test(worker) || !/location-ip:/.test(worker) || !/nearby-ip:/.test(worker)) fail('Location and nearby endpoints lack durable per-user/IP abuse limits.');
 if (!/__Host-nc_session/.test(worker)) fail('Session cookie should use the __Host- prefix.');
 if (/return json\(\{token[,}]/.test(worker)) fail('Authenticated sign-in responses must not expose the raw session token; use the HttpOnly cookie.');
@@ -44,7 +44,7 @@ if (!/Content-Security-Policy:/.test(headers)) fail('public/_headers is missing 
 for (const d of ["object-src 'none'", "frame-ancestors 'none'", "base-uri 'none'", "Cross-Origin-Opener-Policy: same-origin", "Cross-Origin-Resource-Policy: same-origin"]) if (!headers.includes(d)) fail(`CSP is missing ${d}.`);
 
 const sw = await read('public/sw.js');
-if (!/near-cash-v19/.test(sw)) fail('Service worker cache must be version-bumped for the guest-home release.');
+if (!/near-cash-v21/.test(sw)) fail('Service worker cache must be version-bumped for the guest-home release.');
 
 // 4. git hygiene
 const gi = await read('.gitignore').catch(() => '');
