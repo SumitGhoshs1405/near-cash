@@ -1,0 +1,1 @@
+window.addEventListener('error',function(){setTimeout(function(){if(!document.querySelector('.shell')){var a=document.getElementById('app');if(a)a.innerHTML='<div style="padding:40px;font:16px system-ui;color:#eef2ff">Near Cash could not load. Refresh the page or try a newer browser.</div>'}},0)});
