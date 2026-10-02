@@ -11,6 +11,7 @@ const sw = await fs.readFile(path.join(root, 'public/sw.js'), 'utf8');
 const schema = await fs.readFile(path.join(root, 'schema.sql'), 'utf8');
 
 const has = (s, pattern) => assert.match(s, pattern);
+const read = async file => fs.readFile(path.join(root, file), 'utf8');
 
  test('no URL token authentication regression', () => {
   assert.doesNotMatch(worker, /searchParams\.get\(['"]token['"]\)/);
@@ -87,11 +88,45 @@ test('product analytics remains privacy-minimized', () => {
   has(worker, /clientId/);
 });
 
+test('location privacy and disaster-recovery controls remain present', async () => {
+  const worker=await read('src/index.js');
+  const wrangler=await read('wrangler.jsonc');
+  const backup=await read('scripts/backup-d1.mjs');
+  const restore=await read('scripts/restore-d1.mjs');
+  const recovery=await read('docs/internal/08-business-continuity-and-recovery.md');
+  assert.match(worker,/LOCATION_TTL_MS=30\*60\*1000/);
+  assert.match(worker,/UPDATE users SET lat=NULL,lng=NULL,at=NULL WHERE at IS NOT NULL/);
+  assert.match(worker,/u\.at>=\?/);
+  assert.match(wrangler,/\"crons\"\s*:\s*\[\"\*\/15 \* \* \* \*\"\]/);
+  assert.match(backup,/aes-256-gcm/i);
+  assert.match(backup,/sha256/i);
+  assert.match(backup,/r2.*object.*put/i);
+  assert.match(restore,/aes-256-gcm/i);
+  assert.match(restore,/wrangler.*d1.*execute/i);
+  assert.match(recovery,/Backup retention is 30 days/);
+  assert.match(recovery,/Target RPO/);
+});
+
 test('privacy and account-data controls remain present', () => {
   has(worker, /p==="privacy\/export"/);
   has(worker, /p==="privacy\/location\/delete"/);
   has(worker, /p==="privacy\/delete"/);
   has(worker, /Type DELETE to permanently remove your Near Cash account/);
+  has(worker, /DELETE FROM messages WHERE tid IN \(SELECT id FROM threads WHERE a=\? OR b=\?\)/);
+  has(worker, /DELETE FROM ratings WHERE tid IN \(SELECT id FROM threads WHERE a=\? OR b=\?\) OR rater_uid=\? OR ratee_uid=\?/);
+  has(worker, /DELETE FROM otps WHERE phone=\?/);
+  has(worker, /clearSessionCookie\(\)/);
+  has(live, /function deleteAccount\(\)/);
+  has(live, /Type DELETE to permanently remove your account and all associated data/);
+  has(live, /localStorage\.removeItem\(k\)/);
+  has(live, /Delete account &amp; all data/);
+});
+
+test('account deletion is visually destructive and placed after logout', async () => {
+  const css=await read('public/styles.css');
+  has(live, /class=\"secondary full\"[^>]*onclick=\"logout\(\)\"/);
+  has(live, /class=\"danger full\"[^>]*onclick=\"deleteAccount\(\)\"/);
+  has(css, /\.danger\{background:#dc2626;color:#fff/);
 });
 
 test('PWA offline/update assets exist', async () => {

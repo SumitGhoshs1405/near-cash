@@ -20,11 +20,12 @@ async function withSmsCapture(fn) {
 }
 const smsEnv = { SMS_WEBHOOK_URL: 'https://sms.example/send', SMS_WEBHOOK_TOKEN: 'x' };
 const codeOf = sent => sent[sent.length - 1].message.match(/(\d{6})/)[1];
+const tokenFrom = r => decodeURIComponent(String(r.headers.get('set-cookie')||'').match(/__Host-nc_session=([^;]+)/)?.[1]||'');
 
 async function guest(app, ip = '9.9.9.9') {
   const r = await j(await app.call('POST', PROD + '/api/guest', { body: {}, ip }));
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  return r.body;
+  return {...r.body, token:tokenFrom(r)};
 }
 async function locate(app, token, lat = 12.9716, lng = 77.5946) {
   assert.equal((await app.call('POST', PROD + '/api/location', { body: { lat, lng }, token })).status, 200);
@@ -58,8 +59,10 @@ t('DEV_OTP works on localhost only, and the code really signs you in', async () 
   assert.equal(bad.status, 400);
   const v = await j(await app.call('POST', LOCAL + '/api/verify', { body: { phone: '9876543210', code: o.body.devCode, name: 'Asha', adult: true } }));
   assert.equal(v.status, 200);
-  assert.ok(v.body.token.length >= 64);
-  const me = await j(await app.call('GET', LOCAL + '/api/me', { token: v.body.token }));
+  assert.equal(v.body.token, undefined);
+  const cookieToken = tokenFrom(v);
+  assert.ok(cookieToken.length >= 64);
+  const me = await j(await app.call('GET', LOCAL + '/api/me', { token: cookieToken }));
   assert.equal(me.body.name, 'Asha');
 });
 
@@ -86,6 +89,19 @@ t('REQUIRE_SIGNIN=true blocks anonymous guest accounts', async () => {
   assert.equal(r.status, 403);
 });
 
+t('sign-in responses never expose the raw session token and issue a hardened host-only cookie', async () => {
+  const app = await boot(root, { DEV_OTP: 'true' });
+  const o = await j(await app.call('POST', LOCAL + '/api/otp', { body: { phone: '9876543211' } }));
+  const v = await j(await app.call('POST', LOCAL + '/api/verify', { body: { phone: '9876543211', code: o.body.devCode, name: 'Asha', adult: true } }));
+  assert.equal(v.body.token, undefined);
+  const cookie = String(v.headers.get('set-cookie')||'');
+  assert.match(cookie, /__Host-nc_session=/);
+  assert.match(cookie, /\bSecure\b/);
+  assert.match(cookie, /\bHttpOnly\b/);
+  assert.match(cookie, /\bSameSite=Lax\b/);
+  assert.match(cookie, /\bPath=\//);
+});
+
 t('logout revokes the session server-side', async () => {
   const app = await boot(root, {});
   const g = await guest(app);
@@ -94,10 +110,34 @@ t('logout revokes the session server-side', async () => {
   assert.equal((await app.call('GET', PROD + '/api/me', { token: g.token })).status, 401);
 });
 
-t('missing / garbage bearer tokens are rejected', async () => {
+t('account deletion removes all account-linked data and revokes the session', async () => {
   const app = await boot(root, {});
-  assert.equal((await app.call('GET', PROD + '/api/me')).status, 401);
-  assert.equal((await app.call('GET', PROD + '/api/me', { token: 'not-a-real-token' })).status, 401);
+  const [A, B] = [await guest(app, '8.8.8.8'), await guest(app, '8.8.8.9')];
+  await locate(app, A.token); await locate(app, B.token);
+  const listing = await j(await app.call('POST', PROD + '/api/listings', { body: { type: 'have', amount: 250, minutes: 30, area: 'Central' }, token: A.token }));
+  assert.equal(listing.status, 200);
+  const thread = await j(await app.call('POST', PROD + '/api/threads', { body: { listingId: listing.body.id }, token: B.token }));
+  assert.equal(thread.status, 200);
+  const tid = thread.body.id;
+  assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/messages', { body: { text: 'hello' }, token: A.token })).status, 200);
+  assert.equal((await app.call('POST', PROD + '/api/report', { body: { threadId: tid, reason: 'other' }, token: A.token })).status, 200);
+  assert.equal((await app.call('POST', PROD + '/api/block', { body: { userId: B.me.id }, token: A.token })).status, 200);
+  app.DB.raw.prepare('INSERT INTO ratings(tid,rater_uid,ratee_uid,stars,tag,at) VALUES(?,?,?,?,?,?)').run(tid,A.me.id,B.me.id,5,'fair',Date.now());
+  const aPhone=app.DB.raw.prepare('SELECT phone FROM users WHERE id=?').get(A.me.id).phone;
+  app.DB.raw.prepare('INSERT INTO otps(phone,hash,exp,tries) VALUES(?,?,?,0)').run(aPhone,'hash',Date.now()+300000);
+  app.DB.raw.prepare('INSERT INTO abuse_limits(uid,action,window_start,count) VALUES(?,?,?,1)').run(A.me.id,'test',Date.now());
+  const del = await j(await app.call('POST', PROD + '/api/privacy/delete', { body: { confirm: 'DELETE' }, token: A.token }));
+  assert.equal(del.status, 200, JSON.stringify(del.body));
+  assert.equal(del.body.deleted, true);
+  assert.match(String(del.headers.get('set-cookie')||''), /__Host-nc_session=;/);
+  assert.equal((await app.call('GET', PROD + '/api/me', { token: A.token })).status, 401);
+  const uid=A.me.id;
+  for(const table of ['users','sessions','listings','threads','messages','reports','blocks','abuse_limits','notifications','ratings']){
+    const row=app.DB.raw.prepare(`SELECT COUNT(*) c FROM ${table} WHERE ${table==='users'?'id':table==='sessions'?'uid':table==='listings'?'uid':table==='threads'?'(a=? OR b=?)':table==='messages'?'from_uid':table==='reports'?'(by_uid=? OR who_uid=?)':table==='blocks'?'(by_uid=? OR who_uid=?)':table==='abuse_limits'?'uid':table==='notifications'?'uid':table==='ratings'?'(rater_uid=? OR ratee_uid=?)':'1'}${['threads','reports','blocks','ratings'].includes(table)?'':'=?'}`).get(...(table==='threads'||table==='reports'||table==='blocks'||table==='ratings'?[uid,uid]:[uid]));
+    assert.equal(Number(row.c),0, `${table} still contains deleted-user data`);
+  }
+  assert.equal(Number(app.DB.raw.prepare('SELECT COUNT(*) c FROM otps WHERE phone=?').get(aPhone).c),0);
+  assert.equal(Number(app.DB.raw.prepare('SELECT COUNT(*) c FROM users WHERE id=?').get(B.me.id).c),1);
 });
 
 /* ---------- 3. Row-level access (ownership) ---------- */
@@ -145,15 +185,45 @@ t('full marketplace flow still works: chat, PIN, one-time verification, completi
   assert.equal(list.status, 200); assert.equal(list.body.items.length, 1);
   const pin = await j(await app.call('POST', PROD + '/api/threads/' + tid + '/pin', { body: {}, token: A.token }));
   assert.match(pin.body.code, /^\d{4}$/);
-  // generator cannot verify own PIN; wrong PIN rejected; right PIN completes
+  // generator cannot verify own PIN; wrong PIN rejected; right PIN verifies the meetup but does not complete the exchange
   assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/pin/verify', { body: { code: pin.body.code }, token: A.token })).status, 403);
   const wrong = pin.body.code === '1111' ? '2222' : '1111';
   assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/pin/verify', { body: { code: wrong }, token: B.token })).status, 401);
   const ok = await j(await app.call('POST', PROD + '/api/threads/' + tid + '/pin/verify', { body: { code: pin.body.code }, token: B.token }));
-  assert.equal(ok.body.completed, true);
+  assert.equal(ok.body.completed, false);
+  assert.equal(ok.body.verified, true);
   assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/pin/verify', { body: { code: pin.body.code }, token: B.token })).status >= 400, true);
+  assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/rate', { body: { stars: 5, tag: 'fast' }, token: A.token })).status, 409);
+  const ca = await j(await app.call('POST', PROD + '/api/threads/' + tid + '/complete', { body: {}, token: A.token }));
+  assert.equal(ca.body.completed, false);
+  assert.equal((await j(await app.call('GET', PROD + '/api/me', { token: A.token }))).body.done, 0);
+  const cb = await j(await app.call('POST', PROD + '/api/threads/' + tid + '/complete', { body: {}, token: B.token }));
+  assert.equal(cb.body.completed, true);
   assert.equal((await app.call('POST', PROD + '/api/threads/' + tid + '/rate', { body: { stars: 5, tag: 'fast' }, token: A.token })).status, 200);
   assert.equal((await j(await app.call('GET', PROD + '/api/me', { token: A.token }))).body.done, 1);
+});
+
+
+
+t('two-party completion is race-safe and cannot be completed by PIN verification alone', async () => {
+  const app = await boot(root, {});
+  const [A, B] = [await guest(app), await guest(app)];
+  await locate(app, A.token); await locate(app, B.token);
+  const l = await j(await app.call('POST', PROD + '/api/listings', { body: { type: 'have', amount: 300, minutes: 30 }, token: A.token }));
+  const th = await j(await app.call('POST', PROD + '/api/threads', { body: { listingId: l.body.id }, token: B.token }));
+  const pin = await j(await app.call('POST', PROD + '/api/threads/' + th.body.id + '/pin', { body: {}, token: A.token }));
+  const verified = await j(await app.call('POST', PROD + '/api/threads/' + th.body.id + '/pin/verify', { body: { code: pin.body.code }, token: B.token }));
+  assert.equal(verified.body.completed, false);
+  assert.equal((await j(await app.call('GET', PROD + '/api/threads/' + th.body.id, { token: A.token }))).body.status, 'open');
+  const results = await Promise.all([
+    app.call('POST', PROD + '/api/threads/' + th.body.id + '/complete', { body: {}, token: A.token }),
+    app.call('POST', PROD + '/api/threads/' + th.body.id + '/complete', { body: {}, token: B.token })
+  ]);
+  const bodies = await Promise.all(results.map(j));
+  assert.equal(bodies.filter(x => x.status === 200 && x.body.completed === true).length, 1);
+  assert.equal((await j(await app.call('GET', PROD + '/api/threads/' + th.body.id, { token: A.token }))).body.status, 'completed');
+  assert.equal((await j(await app.call('GET', PROD + '/api/me', { token: A.token }))).body.done, 1);
+  assert.equal((await j(await app.call('GET', PROD + '/api/me', { token: B.token }))).body.done, 1);
 });
 
 /* ---------- 4. Rate limiting (durable) ---------- */
@@ -331,4 +401,57 @@ test('static assets get a strict CSP via public/_headers', async () => {
   assert.match(h, /Content-Security-Policy:/);
   for (const d of ["default-src 'self'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "connect-src 'self'"]) assert.ok(h.includes(d), d);
   assert.doesNotMatch(h, /script-src[^;]*https?:/); // no third-party script hosts
+});
+
+
+t('authenticated state-changing requests reject cross-site browser metadata', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app);
+  const r1 = await app.call('POST', PROD + '/api/profile', { body: { name: 'Blocked' }, token: A.token, headers: { 'Sec-Fetch-Site': 'cross-site' } });
+  assert.equal(r1.status, 403);
+  const r2 = await app.call('POST', PROD + '/api/profile', { body: { name: 'Blocked' }, token: A.token, headers: { Origin: 'https://evil.example' } });
+  assert.equal(r2.status, 403);
+  const ok = await app.call('POST', PROD + '/api/profile', { body: { name: 'Allowed' }, token: A.token });
+  assert.equal(ok.status, 200);
+});
+
+/* ---------- 6. Privacy-preserving location matching ---------- */
+t('nearby: exact distance/bearing are never exposed; only coarse bands and sectors are returned', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app, '8.8.8.8');
+  const B = await guest(app, '8.8.8.9');
+  await locate(app, A.token, 12.9716, 77.5946);
+  await locate(app, B.token, 12.9761, 77.6000);
+  const l = await j(await app.call('POST', PROD + '/api/listings', { body: { type: 'have', amount: 250, minutes: 30 }, token: B.token }));
+  assert.equal(l.status, 200);
+  const near = await j(await app.call('GET', PROD + '/api/nearby?r=10', { token: A.token }));
+  assert.equal(near.status, 200);
+  assert.equal(near.body.items.length, 1);
+  const item = near.body.items[0];
+  for (const forbidden of ['lat','lng','km','brg']) assert.equal(Object.hasOwn(item, forbidden), false, forbidden);
+  assert.match(item.distance, /^(<500 m|500 m–1 km|1–3 km|3–5 km|5–10 km)$/);
+  assert.match(item.direction, /^(N|NE|E|SE|S|SW|W|NW)$/);
+  assert.ok(Number.isInteger(item.distanceBand) && item.distanceBand >= 0 && item.distanceBand <= 4);
+  assert.ok(Number.isInteger(item.directionSector) && item.directionSector >= 0 && item.directionSector <= 7);
+});
+
+t('location/nearby: durable per-user abuse limits block excessive polling and updates', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app, '8.8.4.4');
+  assert.equal((await app.call('POST', PROD + '/api/location', { body: { lat: 12.9716, lng: 77.5946 }, token: A.token })).status, 200);
+  // The endpoint intentionally rejects overly frequent location writes as well as applying a rolling durable cap.
+  assert.equal((await app.call('POST', PROD + '/api/location', { body: { lat: 12.9716, lng: 77.5946 }, token: A.token })).status, 429);
+  const statuses=[];
+  for(let i=0;i<62;i++) statuses.push((await app.call('GET', PROD + '/api/nearby?r=3', { token: A.token })).status);
+  assert.equal(statuses.slice(0,60).every(x=>x===200), true);
+  assert.equal(statuses[60], 429);
+  assert.equal(statuses[61], 429);
+});
+
+t('location: implausible high-speed jumps are rejected', async () => {
+  const app = await boot(root, {});
+  const A = await guest(app, '8.8.4.5');
+  assert.equal((await app.call('POST', PROD + '/api/location', { body: { lat: 12.9716, lng: 77.5946 }, token: A.token })).status, 200);
+  // Immediate movement to a far-away point is rejected before it can influence nearby matching.
+  assert.equal((await app.call('POST', PROD + '/api/location', { body: { lat: 28.6139, lng: 77.2090 }, token: A.token })).status, 429);
 });
