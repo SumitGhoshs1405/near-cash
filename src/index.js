@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 
-const SCHEMA=["CREATE TABLE IF NOT EXISTS users (\n  id TEXT PRIMARY KEY,\n  phone TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  done INTEGER NOT NULL DEFAULT 0,\n  lat REAL,\n  lng REAL,\n  at INTEGER,\n  created INTEGER NOT NULL\n)", "CREATE TABLE IF NOT EXISTS sessions (\n  token_hash TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  exp INTEGER NOT NULL,\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_sessions_exp ON sessions(exp)", "CREATE TABLE IF NOT EXISTS otps (\n  phone TEXT PRIMARY KEY,\n  hash TEXT NOT NULL,\n  exp INTEGER NOT NULL,\n  tries INTEGER NOT NULL DEFAULT 0\n)", "CREATE TABLE IF NOT EXISTS listings (\n  id TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  type TEXT NOT NULL CHECK(type IN ('have','need')),\n  amount INTEGER NOT NULL,\n  exp INTEGER NOT NULL,\n  status TEXT NOT NULL DEFAULT 'open',\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_listings_open ON listings(status, exp)", "CREATE INDEX IF NOT EXISTS idx_listings_uid ON listings(uid)", "CREATE TABLE IF NOT EXISTS threads (\n  id TEXT PRIMARY KEY,\n  lid TEXT NOT NULL,\n  amount INTEGER NOT NULL,\n  type TEXT NOT NULL,\n  a TEXT NOT NULL,\n  b TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'open',\n  confirmed TEXT NOT NULL DEFAULT '[]',\n  created INTEGER NOT NULL,\n  pin_hash TEXT,\n  pin_by TEXT,\n  pin_exp INTEGER,\n  pin_tries INTEGER NOT NULL DEFAULT 0,\n  pin_verified INTEGER NOT NULL DEFAULT 0,\n  FOREIGN KEY(a) REFERENCES users(id) ON DELETE CASCADE,\n  FOREIGN KEY(b) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_threads_user_a ON threads(a, created)", "CREATE INDEX IF NOT EXISTS idx_threads_user_b ON threads(b, created)", "CREATE TABLE IF NOT EXISTS messages (\n  id TEXT PRIMARY KEY,\n  tid TEXT NOT NULL,\n  from_uid TEXT NOT NULL,\n  text TEXT NOT NULL,\n  at INTEGER NOT NULL,\n  FOREIGN KEY(tid) REFERENCES threads(id) ON DELETE CASCADE,\n  FOREIGN KEY(from_uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_messages_tid ON messages(tid, at)", "CREATE TABLE IF NOT EXISTS reports (\n  id TEXT PRIMARY KEY,\n  by_uid TEXT NOT NULL,\n  who_uid TEXT NOT NULL,\n  tid TEXT NOT NULL,\n  reason TEXT NOT NULL,\n  at INTEGER NOT NULL,\n  last_json TEXT NOT NULL\n)", "CREATE TABLE IF NOT EXISTS blocks (\n  by_uid TEXT NOT NULL,\n  who_uid TEXT NOT NULL,\n  PRIMARY KEY(by_uid, who_uid)\n)", "CREATE TABLE IF NOT EXISTS abuse_limits (\n  uid TEXT NOT NULL,\n  action TEXT NOT NULL,\n  window_start INTEGER NOT NULL,\n  count INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY(uid, action, window_start),\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_abuse_limits_uid ON abuse_limits(uid, action, window_start)", "CREATE TABLE IF NOT EXISTS notifications (\n  id TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  kind TEXT NOT NULL,\n  text TEXT NOT NULL,\n  ref TEXT,\n  at INTEGER NOT NULL,\n  read INTEGER NOT NULL DEFAULT 0,\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_notifications_uid ON notifications(uid, at)", "CREATE TABLE IF NOT EXISTS observability_events (\n  id TEXT PRIMARY KEY,\n  at INTEGER NOT NULL,\n  kind TEXT NOT NULL,\n  route TEXT NOT NULL,\n  status INTEGER NOT NULL,\n  request_id TEXT NOT NULL,\n  message TEXT NOT NULL\n)", "CREATE INDEX IF NOT EXISTS idx_observability_at ON observability_events(at)", "CREATE INDEX IF NOT EXISTS idx_observability_kind_at ON observability_events(kind, at)", "CREATE TABLE IF NOT EXISTS analytics_events (\n  id TEXT PRIMARY KEY,\n  at INTEGER NOT NULL,\n  event TEXT NOT NULL,\n  client_id TEXT NOT NULL,\n  screen TEXT,\n  meta_json TEXT NOT NULL DEFAULT '{}'\n)", "CREATE INDEX IF NOT EXISTS idx_analytics_at ON analytics_events(at)", "CREATE INDEX IF NOT EXISTS idx_analytics_event_at ON analytics_events(event, at)", "CREATE INDEX IF NOT EXISTS idx_users_at ON users(at)", "CREATE INDEX IF NOT EXISTS idx_listings_exp_status ON listings(status, exp)", "CREATE INDEX IF NOT EXISTS idx_threads_status_created ON threads(status, created)", "CREATE INDEX IF NOT EXISTS idx_notifications_uid_read_at ON notifications(uid, read, at)", "CREATE INDEX IF NOT EXISTS idx_reports_by_tid_at ON reports(by_uid, tid, at)", "CREATE TABLE IF NOT EXISTS ratings (\n  tid TEXT NOT NULL,\n  rater_uid TEXT NOT NULL,\n  ratee_uid TEXT NOT NULL,\n  stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5),\n  tag TEXT,\n  at INTEGER NOT NULL,\n  PRIMARY KEY(tid, rater_uid),\n  FOREIGN KEY(tid) REFERENCES threads(id) ON DELETE CASCADE,\n  FOREIGN KEY(rater_uid) REFERENCES users(id) ON DELETE CASCADE,\n  FOREIGN KEY(ratee_uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_uid)", "CREATE INDEX IF NOT EXISTS idx_ratings_tid ON ratings(tid)", "CREATE TABLE IF NOT EXISTS rate_limits (\n  k TEXT NOT NULL,\n  window_start INTEGER NOT NULL,\n  count INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY(k, window_start)\n)", "CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)"];
+const SCHEMA=["CREATE TABLE IF NOT EXISTS users (\n  id TEXT PRIMARY KEY,\n  phone TEXT NOT NULL UNIQUE,\n  name TEXT NOT NULL,\n  done INTEGER NOT NULL DEFAULT 0,\n  lat REAL,\n  lng REAL,\n  at INTEGER,\n  created INTEGER NOT NULL\n)", "CREATE TABLE IF NOT EXISTS sessions (\n  token_hash TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  exp INTEGER NOT NULL,\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_sessions_exp ON sessions(exp)", "CREATE TABLE IF NOT EXISTS otps (\n  phone TEXT PRIMARY KEY,\n  hash TEXT NOT NULL,\n  exp INTEGER NOT NULL,\n  tries INTEGER NOT NULL DEFAULT 0\n)", "CREATE TABLE IF NOT EXISTS listings (\n  id TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  type TEXT NOT NULL CHECK(type IN ('have','need')),\n  amount INTEGER NOT NULL,\n  exp INTEGER NOT NULL,\n  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','matched','cancelled')),\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_listings_open ON listings(status, exp)", "CREATE INDEX IF NOT EXISTS idx_listings_uid ON listings(uid)", "CREATE TABLE IF NOT EXISTS threads (\n  id TEXT PRIMARY KEY,\n  lid TEXT NOT NULL,\n  amount INTEGER NOT NULL,\n  type TEXT NOT NULL,\n  a TEXT NOT NULL,\n  b TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','matched','completed','closed')),\n  confirmed TEXT NOT NULL DEFAULT '[]',\n  created INTEGER NOT NULL,\n  pin_hash TEXT,\n  pin_by TEXT,\n  pin_exp INTEGER,\n  pin_tries INTEGER NOT NULL DEFAULT 0,\n  pin_verified INTEGER NOT NULL DEFAULT 0,\n  FOREIGN KEY(a) REFERENCES users(id) ON DELETE CASCADE,\n  FOREIGN KEY(b) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_threads_user_a ON threads(a, created)", "CREATE INDEX IF NOT EXISTS idx_threads_user_b ON threads(b, created)", "CREATE TABLE IF NOT EXISTS messages (\n  id TEXT PRIMARY KEY,\n  tid TEXT NOT NULL,\n  from_uid TEXT NOT NULL,\n  text TEXT NOT NULL,\n  at INTEGER NOT NULL,\n  FOREIGN KEY(tid) REFERENCES threads(id) ON DELETE CASCADE,\n  FOREIGN KEY(from_uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_messages_tid ON messages(tid, at)", "CREATE TABLE IF NOT EXISTS reports (\n  id TEXT PRIMARY KEY,\n  by_uid TEXT NOT NULL,\n  who_uid TEXT NOT NULL,\n  tid TEXT NOT NULL,\n  reason TEXT NOT NULL,\n  at INTEGER NOT NULL,\n  last_json TEXT NOT NULL\n)", "CREATE TABLE IF NOT EXISTS blocks (\n  by_uid TEXT NOT NULL,\n  who_uid TEXT NOT NULL,\n  PRIMARY KEY(by_uid, who_uid)\n)", "CREATE TABLE IF NOT EXISTS abuse_limits (\n  uid TEXT NOT NULL,\n  action TEXT NOT NULL,\n  window_start INTEGER NOT NULL,\n  count INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY(uid, action, window_start),\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_abuse_limits_uid ON abuse_limits(uid, action, window_start)", "CREATE TABLE IF NOT EXISTS notifications (\n  id TEXT PRIMARY KEY,\n  uid TEXT NOT NULL,\n  kind TEXT NOT NULL,\n  text TEXT NOT NULL,\n  ref TEXT,\n  at INTEGER NOT NULL,\n  read INTEGER NOT NULL DEFAULT 0,\n  FOREIGN KEY(uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_notifications_uid ON notifications(uid, at)", "CREATE TABLE IF NOT EXISTS observability_events (\n  id TEXT PRIMARY KEY,\n  at INTEGER NOT NULL,\n  kind TEXT NOT NULL,\n  route TEXT NOT NULL,\n  status INTEGER NOT NULL,\n  request_id TEXT NOT NULL,\n  message TEXT NOT NULL\n)", "CREATE INDEX IF NOT EXISTS idx_observability_at ON observability_events(at)", "CREATE INDEX IF NOT EXISTS idx_observability_kind_at ON observability_events(kind, at)", "CREATE TABLE IF NOT EXISTS analytics_events (\n  id TEXT PRIMARY KEY,\n  at INTEGER NOT NULL,\n  event TEXT NOT NULL,\n  client_id TEXT NOT NULL,\n  screen TEXT,\n  meta_json TEXT NOT NULL DEFAULT '{}'\n)", "CREATE INDEX IF NOT EXISTS idx_analytics_at ON analytics_events(at)", "CREATE INDEX IF NOT EXISTS idx_analytics_event_at ON analytics_events(event, at)", "CREATE INDEX IF NOT EXISTS idx_users_at ON users(at)", "CREATE INDEX IF NOT EXISTS idx_listings_exp_status ON listings(status, exp)", "CREATE INDEX IF NOT EXISTS idx_threads_status_created ON threads(status, created)", "CREATE INDEX IF NOT EXISTS idx_notifications_uid_read_at ON notifications(uid, read, at)", "CREATE INDEX IF NOT EXISTS idx_reports_by_tid_at ON reports(by_uid, tid, at)", "CREATE TABLE IF NOT EXISTS ratings (\n  tid TEXT NOT NULL,\n  rater_uid TEXT NOT NULL,\n  ratee_uid TEXT NOT NULL,\n  stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5),\n  tag TEXT,\n  at INTEGER NOT NULL,\n  PRIMARY KEY(tid, rater_uid),\n  FOREIGN KEY(tid) REFERENCES threads(id) ON DELETE CASCADE,\n  FOREIGN KEY(rater_uid) REFERENCES users(id) ON DELETE CASCADE,\n  FOREIGN KEY(ratee_uid) REFERENCES users(id) ON DELETE CASCADE\n)", "CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_uid)", "CREATE INDEX IF NOT EXISTS idx_ratings_tid ON ratings(tid)", "CREATE TABLE IF NOT EXISTS rate_limits (\n  k TEXT NOT NULL,\n  window_start INTEGER NOT NULL,\n  count INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY(k, window_start)\n)", "CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)"];
 let schemaReady=false;
 // Column additions for DBs created before the meetup-PIN feature existed. SQLite has no
 // "ADD COLUMN IF NOT EXISTS", so these are run one at a time and a "duplicate column" failure
@@ -17,7 +17,7 @@ async function ensureSchema(env){if(schemaReady)return;await env.DB.batch(SCHEMA
 const apiHits=new Map();
 const clientIp=req=>String(req.headers.get("CF-Connecting-IP")||req.headers.get("CF-Connecting-IPV6")||"?").slice(0,80);
 const rateLimit=(key,limit,windowMs)=>{const now=Date.now();if(apiHits.size>5000){for(const [k,v] of apiHits)if(v.r<=now)apiHits.delete(k);}const h=apiHits.get(key);if(!h||h.r<=now){apiHits.set(key,{c:1,r:now+windowMs});return {ok:true,retry:0};}h.c+=1;return h.c<=limit?{ok:true,retry:0}:{ok:false,retry:Math.max(1,Math.ceil((h.r-now)/1000))};};
-const securityHeaders={"X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Referrer-Policy":"strict-origin-when-cross-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=(self)","Strict-Transport-Security":"max-age=31536000; includeSubDomains","Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'","Cache-Control":"no-store"};
+const securityHeaders={"X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Referrer-Policy":"strict-origin-when-cross-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=(self)","Strict-Transport-Security":"max-age=31536000; includeSubDomains","Cross-Origin-Opener-Policy":"same-origin","Cross-Origin-Resource-Policy":"same-origin","X-Permitted-Cross-Domain-Policies":"none","Origin-Agent-Cluster":"?1","Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'","Cache-Control":"no-store"};
 const json = (o, status=200, extra={}) => new Response(JSON.stringify(o), {status, headers:{"Content-Type":"application/json; charset=utf-8", ...securityHeaders, ...extra}});
 const err = (m,c=400) => { const e=new Error(m); e.status=c; throw e; };
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0,16);
@@ -32,29 +32,53 @@ async function recordObs(env,{kind,route,status,requestId,message}){
   }catch(e){ console.error("observability",e&&e.message||e); }
 }
 async function sha(s){ const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(s))); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+const equalHex=(a,b)=>{a=String(a);b=String(b);if(a.length!==b.length)return false;let d=0;for(let i=0;i<a.length;i++)d|=a.charCodeAt(i)^b.charCodeAt(i);return d===0;};
 const clean=v=>String(v??"").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,"");
 // DEV_OTP (code shown in the API response) is honoured ONLY when the request host is local, so a stray DEV_OTP=true in production can never expose sign-in codes.
 const devOtpOn=(env,url)=>env.DEV_OTP==="true"&&/^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
 const escPhone = s => String(s||"").replace(/[\s-]/g,"");
+const LOCATION_TTL_MS=30*60*1000;
+const LOCATION_MIN_INTERVAL_MS=10000;
+const MAX_REASONABLE_SPEED_KMH=250;
+const distanceBand=(km)=>km<=0.5?0:km<=1?1:km<=3?2:km<=5?3:4;
+const distanceLabel=(i)=>['<500 m','500 m–1 km','1–3 km','3–5 km','5–10 km'][i]||'Nearby';
+const bearingSector=(deg)=>Math.round(((Number(deg)||0)%360)/45)%8;
+const bearingLabel=(i)=>['N','NE','E','SE','S','SW','W','NW'][i]||'N';
 const rad = x => x*Math.PI/180;
 const dist=(a,b)=>{const h=Math.sin(rad(b.lat-a.lat)/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(rad(b.lng-a.lng)/2)**2;return 12742*Math.asin(Math.sqrt(h));};
 const bearing=(a,b)=>{const y=Math.sin(rad(b.lng-a.lng))*Math.cos(rad(b.lat)),x=Math.cos(rad(a.lat))*Math.sin(rad(b.lat))-Math.sin(rad(a.lat))*Math.cos(rad(b.lat))*Math.cos(rad(b.lng-a.lng));return(Math.atan2(y,x)*180/Math.PI+360)%360;};
 async function repOf(env,uid){const r=await env.DB.prepare("SELECT AVG(stars) a,COUNT(*) c FROM ratings WHERE ratee_uid=?").bind(uid).first();return{avg:(r&&r.a)||0,count:(r&&r.c)||0};}
 const badgesFor=(u,rep)=>{const b=[];if(u.phone&&!String(u.phone).startsWith("guest:"))b.push("verified");if((u.done||0)>=5&&((rep&&rep.avg)||0)>=4.5)b.push("trusted");if((u.done||0)===0)b.push("new");return b;};
-const pubU=(u,rep)=>({id:u.id,name:u.name,done:u.done||0,rating:rep?Math.round((rep.avg||0)*10)/10:0,ratingCount:rep?(rep.count||0):0,badges:badgesFor(u,rep||{avg:0,count:0})});
+const pubU=(u,rep)=>({id:u.id,name:u.name,done:u.done||0,guest:String(u.phone||'').startsWith('guest:'),rating:rep?Math.round((rep.avg||0)*10)/10:0,ratingCount:rep?(rep.count||0):0,badges:badgesFor(u,rep||{avg:0,count:0})});
 const readBody=async req=>{let t=await req.text(); if(t.length>10000)err("Request too large",413); let v;try{v=t?JSON.parse(t):{}}catch{err("Invalid JSON",400)}if(v===null||typeof v!=="object"||Array.isArray(v))err("Invalid JSON",400);return v};
 const parseRow = r => r ? {...r} : null;
 const normPhone=(env,p)=>{p=String(p||"").replace(/[\s-]/g,"");return p[0]==="+"?p:/^\d{10}$/.test(p)?"+"+(env.DEFAULT_COUNTRY_CODE||"91")+p:"+"+p;};
 async function sendSms(env,to,code){
   if(env.TWILIO_ACCOUNT_SID&&env.TWILIO_AUTH_TOKEN&&env.TWILIO_FROM){const r=await fetch("https://api.twilio.com/2010-04-01/Accounts/"+env.TWILIO_ACCOUNT_SID+"/Messages.json",{method:"POST",headers:{Authorization:"Basic "+btoa(env.TWILIO_ACCOUNT_SID+":"+env.TWILIO_AUTH_TOKEN),"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({To:to,From:env.TWILIO_FROM,Body:"Your Near Cash code is "+code})});if(!r.ok){console.error("Twilio error",r.status,await r.text());err("Could not send the code",502);}return;}
 const u=env.SMS_WEBHOOK_URL;if(!u)err("SMS provider not configured",501);const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+(env.SMS_WEBHOOK_TOKEN||"")},body:JSON.stringify({to,message:"Your Near Cash code is "+code})});if(!r.ok)err("Could not send the code",502);}
+const SESSION_COOKIE='__Host-nc_session';
+const sessionCookie=(token,maxAge=2592e6/1000)=>`${SESSION_COOKIE}=${encodeURIComponent(token)}; Max-Age=${Math.floor(maxAge)}; Path=/; Secure; HttpOnly; SameSite=Lax`;
+const clearSessionCookie=()=>`${SESSION_COOKIE}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`;
 async function getUser(env,req){
   const auth=String(req.headers.get("Authorization")||"");
-  if(!/^Bearer\s+[^\s]+$/i.test(auth)){await recordObs(env,{kind:"auth_failure",route:"/api/authenticated",status:401,requestId:requestId(),message:"Missing or malformed Bearer token"});err("Please sign in",401);}
-  const tok=auth.replace(/^Bearer\s+/i,"").trim();
+  let tok="";
+  if(/^Bearer\s+[^\s]+$/i.test(auth)) tok=auth.replace(/^Bearer\s+/i,"").trim();
+  else {
+    const cookies=String(req.headers.get("Cookie")||"");
+    const m=cookies.match(new RegExp('(?:^|;\\s*)'+SESSION_COOKIE.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'=([^;]+)'));
+    if(m) tok=decodeURIComponent(m[1]);
+  }
+  if(!tok){await recordObs(env,{kind:"auth_failure",route:"/api/authenticated",status:401,requestId:requestId(),message:"Missing session"});err("Please sign in",401);}
+  const fetchSite=String(req.headers.get('Sec-Fetch-Site')||'').toLowerCase();
+  const origin=String(req.headers.get('Origin')||'').trim();
+  if(fetchSite==='cross-site'||(origin&&origin!==new URL(req.url).origin)){await recordObs(env,{kind:'csrf_rejected',route:new URL(req.url).pathname,status:403,requestId:requestId(),message:'Cross-site state-changing request rejected'});err('Cross-site request blocked',403);}
   const h=await sha(tok);
   const r=await env.DB.prepare("SELECT u.* FROM sessions s JOIN users u ON u.id=s.uid WHERE s.token_hash=? AND s.exp>? LIMIT 1").bind(h,Date.now()).first();
   if(!r){await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(h).run().catch(()=>{});await recordObs(env,{kind:"auth_failure",route:"/api/authenticated",status:401,requestId:requestId(),message:"Expired or invalid session"});err("Please sign in",401);}
+  if(r.lat!=null && (!r.at || Date.now()-Number(r.at)>LOCATION_TTL_MS)){
+    await env.DB.prepare("UPDATE users SET lat=NULL,lng=NULL,at=NULL WHERE id=?").bind(r.id).run().catch(()=>{});
+    r.lat=null; r.lng=null; r.at=null;
+  }
   return {u:r,tok,h};
 }
 async function blocked(env,a,b){return !!await env.DB.prepare("SELECT 1 FROM blocks WHERE (by_uid=? AND who_uid=?) OR (by_uid=? AND who_uid=?) LIMIT 1").bind(a,b,b,a).first();}
@@ -84,7 +108,7 @@ async function adminKeyCheck(env,req,configuredValue,route){
   const supplied=String(req.headers.get("X-Admin-Key")||"");
   if(!supplied)return adminJson(env,req,{error:"Admin key required"},401);
   const [expectedHash,suppliedHash]=await Promise.all([sha(configuredValue),sha(supplied)]);
-  if(expectedHash!==suppliedHash){await keyLimit(env,FK,10,3600000);return adminJson(env,req,{error:"Invalid admin key"},401);}
+  if(!equalHex(expectedHash,suppliedHash)){await keyLimit(env,FK,10,3600000);return adminJson(env,req,{error:"Invalid admin key"},401);}
   return null;
 }
 async function notify(env,uid,kind,text,ref){try{await env.DB.prepare("INSERT INTO notifications(id,uid,kind,text,ref,at,read) VALUES(?,?,?,?,?,?,0)").bind(id(),uid,kind,String(text).slice(0,160),ref||null,Date.now()).run();await push(env,uid,{t:"notif"});}catch(e){console.error("notify",e&&e.message);}}
@@ -159,26 +183,24 @@ async function privacyLocationDelete(env,req,u){
 async function privacyDelete(env,req,u,b){
   if(req.method!=="POST")return json({error:"Method not allowed"},405);
   if(String(b.confirm||"")!=="DELETE")err('Type DELETE to permanently remove your Near Cash account',400);
-  const tids=await env.DB.prepare("SELECT id FROM threads WHERE a=? OR b=? LIMIT 200").bind(u.id,u.id).all();
-  const ids=(tids.results||[]).map(x=>String(x.id)).filter(Boolean);
-  const stmts=[];
-  if(ids.length){
-    const q=ids.map(()=>'?').join(',');
-    stmts.push(env.DB.prepare(`DELETE FROM messages WHERE tid IN (${q})`).bind(...ids));
-    stmts.push(env.DB.prepare(`DELETE FROM reports WHERE tid IN (${q})`).bind(...ids));
-    stmts.push(env.DB.prepare(`DELETE FROM threads WHERE id IN (${q})`).bind(...ids));
-  }
-  stmts.push(
+  // Delete all account-linked records without a fixed row limit. Messages, reports and
+  // ratings are removed before their parent threads/users so this remains safe even when
+  // a deployment has foreign-key enforcement disabled. OTPs are keyed by phone, not uid.
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM messages WHERE tid IN (SELECT id FROM threads WHERE a=? OR b=?)").bind(u.id,u.id),
+    env.DB.prepare("DELETE FROM reports WHERE tid IN (SELECT id FROM threads WHERE a=? OR b=?)").bind(u.id,u.id),
+    env.DB.prepare("DELETE FROM ratings WHERE tid IN (SELECT id FROM threads WHERE a=? OR b=?) OR rater_uid=? OR ratee_uid=?").bind(u.id,u.id,u.id,u.id),
+    env.DB.prepare("DELETE FROM threads WHERE a=? OR b=?").bind(u.id,u.id),
     env.DB.prepare("DELETE FROM listings WHERE uid=?").bind(u.id),
+    env.DB.prepare("DELETE FROM reports WHERE who_uid=? OR by_uid=?").bind(u.id,u.id),
     env.DB.prepare("DELETE FROM notifications WHERE uid=?").bind(u.id),
     env.DB.prepare("DELETE FROM abuse_limits WHERE uid=?").bind(u.id),
     env.DB.prepare("DELETE FROM sessions WHERE uid=?").bind(u.id),
     env.DB.prepare("DELETE FROM blocks WHERE by_uid=? OR who_uid=?").bind(u.id,u.id),
-    env.DB.prepare("DELETE FROM reports WHERE by_uid=?").bind(u.id),
+    env.DB.prepare("DELETE FROM otps WHERE phone=?").bind(u.phone),
     env.DB.prepare("DELETE FROM users WHERE id=?").bind(u.id)
-  );
-  await env.DB.batch(stmts);
-  return json({ok:true,deleted:true});
+  ]);
+  return json({ok:true,deleted:true},200,{"Set-Cookie":clearSessionCookie()});
 }
 const RANGE_PRESETS = {
   "24h":  {ms:24*3600000,   bucket:"hour",  fmt:"%Y-%m-%d %H:00", label:"Last 24 hours"},
@@ -357,7 +379,7 @@ async function api(env,req,p,url){
     await env.DB.prepare("INSERT INTO users(id,phone,name,done,created) VALUES(?,?,?,?,?)").bind(uid,"guest:"+uid,name,0,Date.now()).run();
     const token=crypto.randomUUID()+crypto.randomUUID(),h=await sha(token);
     await env.DB.prepare("INSERT INTO sessions(token_hash,uid,exp) VALUES(?,?,?)").bind(h,uid,Date.now()+2592e6).run();
-    await notify(env,uid,"account","Account created. Welcome, "+name+"!");return json({token,me:{id:uid,name,done:0}});
+    await notify(env,uid,"account","Account created. Welcome, "+name+"!");return json({me:{id:uid,name,done:0,guest:true}},200,{"Set-Cookie":sessionCookie(token)});
   }
   if(p==="otp"&&m==="POST"){
     const ph=normPhone(env,b.phone); if(!/^\+\d{11,14}$/.test(ph))err("Enter a valid phone number");
@@ -380,16 +402,16 @@ async function api(env,req,p,url){
     if(!o||o.exp<Date.now())err("Code expired. Request a new one.");
     if(o.tries>=5){await env.DB.prepare("DELETE FROM otps WHERE phone=?").bind(ph).run();err("Too many attempts. Request a new code.",429);}
     await env.DB.prepare("UPDATE otps SET tries=tries+1 WHERE phone=?").bind(ph).run();
-    if(o.hash!==await sha(String(b.code)+ph))err("That code is wrong");
+    if(!equalHex(o.hash,await sha(String(b.code)+ph)))err("That code is wrong");
     if(b.adult!==true)err("You must be 18 or older");
     let u=await env.DB.prepare("SELECT * FROM users WHERE phone=?").bind(ph).first(); const nm=clean(b.name).trim().slice(0,40); if(!u&&!nm)err("Enter your name");
     await env.DB.prepare("DELETE FROM otps WHERE phone=?").bind(ph).run();
     if(!u){u={id:id(),phone:ph,name:nm,done:0,created:Date.now()};await env.DB.prepare("INSERT INTO users(id,phone,name,done,created) VALUES(?,?,?,?,?)").bind(u.id,u.phone,u.name,0,u.created).run();}
     const token=crypto.randomUUID()+crypto.randomUUID(), h=await sha(token);await env.DB.prepare("INSERT INTO sessions(token_hash,uid,exp) VALUES(?,?,?)").bind(h,u.id,Date.now()+2592e6).run();
-    return json({token,me:pubU(u,await repOf(env,u.id))});
+    return json({me:pubU(u,await repOf(env,u.id))},200,{"Set-Cookie":sessionCookie(token)});
   }
   const {u,h:sessionHash}=await getUser(env,req);
-  if(p==="logout"&&m==="POST"){await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(sessionHash).run();return json({ok:true});}
+  if(p==="logout"&&m==="POST"){await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(sessionHash).run();return json({ok:true},200,{"Set-Cookie":clearSessionCookie()});}
   if(p==="profile"&&m==="POST"){const nm=clean(b.name).trim().slice(0,40);if(!nm)err("Enter a name");await env.DB.prepare("UPDATE users SET name=? WHERE id=?").bind(nm,u.id).run();await notify(env,u.id,"profile","Your display name is now "+nm+".");return json({ok:true,name:nm});}
   if(p==="privacy/export"&&m==="GET")return privacyExport(env,req,u);
   if(p==="privacy/location/delete"&&m==="POST")return privacyLocationDelete(env,req,u);
@@ -402,16 +424,31 @@ async function api(env,req,p,url){
     return stub.fetch(new Request("https://stream/stream"));
   }
   if(p==="location"&&m==="POST"){
-    const la=b.lat,lo=b.lng;if(typeof la!=="number"||typeof lo!=="number"||!Number.isFinite(la)||!Number.isFinite(lo)||Math.abs(la)>90||Math.abs(lo)>180)err("Invalid location");
-    await env.DB.prepare("UPDATE users SET lat=?,lng=?,at=? WHERE id=?").bind(+la.toFixed(4),+lo.toFixed(4),Date.now(),u.id).run();if(u.lat==null)await notify(env,u.id,"location","Location is on. You can now see cash nearby.");return json({ok:true});
+    if(!(await keyLimit(env,"location-ip:"+clientIp(req),120,60000)).ok)err("Too many location updates from this network. Please try again shortly.",429);
+    await userActionLimit(env,u.id,"location_update",12,60*1000);
+    const la=b.lat,lo=b.lng;
+    if(typeof la!=="number"||typeof lo!=="number"||!Number.isFinite(la)||!Number.isFinite(lo)||Math.abs(la)>90||Math.abs(lo)>180)err("Invalid location");
+    const now=Date.now();
+    if(u.at&&now-Number(u.at)<LOCATION_MIN_INTERVAL_MS)err("Please wait before sending another location update.",429);
+    if(u.lat!=null&&u.lng!=null&&u.at){
+      const elapsed=Math.max(1,(now-Number(u.at))/3600000);
+      const km=dist(u,{lat:la,lng:lo});
+      if(km/elapsed>MAX_REASONABLE_SPEED_KMH)err("Location update moved too far too quickly. Please retry from your current position.",400);
+    }
+    await env.DB.prepare("UPDATE users SET lat=?,lng=?,at=? WHERE id=?").bind(+la.toFixed(4),+lo.toFixed(4),now,u.id).run();
+    if(u.lat==null)await notify(env,u.id,"location","Location is on. You can now see cash nearby.");
+    return json({ok:true});
   }
   if(p==="nearby"){
+    if(!(await keyLimit(env,"nearby-ip:"+clientIp(req),300,60000)).ok)err("Too many nearby searches from this network. Please try again shortly.",429);
+    await userActionLimit(env,u.id,"nearby_query",60,60*1000);
     const R=Math.min(+url.searchParams.get("r")||3,10), now=Date.now();
     const mine=await env.DB.prepare("SELECT id,type,amount,exp,status FROM listings WHERE uid=? AND status='open' AND exp>? ORDER BY exp").bind(u.id,now).all();
-    if(u.lat==null)return json({items:[],mine:mine.results||[]});
-    const rows=await env.DB.prepare("SELECT l.*,u.name,u.done,u.lat,u.lng,r.avg_stars,r.rating_count FROM listings l JOIN users u ON u.id=l.uid LEFT JOIN (SELECT ratee_uid,AVG(stars) avg_stars,COUNT(*) rating_count FROM ratings GROUP BY ratee_uid) r ON r.ratee_uid=u.id WHERE l.status='open' AND l.exp>? AND l.uid<>? LIMIT 500").bind(now,u.id).all();
-    const items=[]; for(const l of rows.results||[]){if(l.lat==null||await blocked(env,u.id,l.uid))continue;const d=dist(u,l);const rating=Math.round((l.avg_stars||0)*10)/10,ratingCount=l.rating_count||0,trusted=(l.done||0)>=5&&rating>=4.5;if(d<=R)items.push({id:l.id,type:l.type,amount:l.amount,mins:Math.ceil((l.exp-now)/60000),km:Math.max(.01,Math.round(d*100)/100),brg:Math.round(bearing(u,l)),name:l.name,done:l.done||0,rating,ratingCount,trusted,area:l.area||''});}
-    items.sort((a,b)=>a.km-b.km);return json({items,mine:mine.results||[]});
+    if(u.lat==null || !u.at || now-Number(u.at)>LOCATION_TTL_MS)return json({items:[],mine:mine.results||[]});
+    const fresh=now-LOCATION_TTL_MS;
+    const rows=await env.DB.prepare("SELECT l.*,u.name,u.done,u.lat,u.lng,r.avg_stars,r.rating_count FROM listings l JOIN users u ON u.id=l.uid LEFT JOIN (SELECT ratee_uid,AVG(stars) avg_stars,COUNT(*) rating_count FROM ratings GROUP BY ratee_uid) r ON r.ratee_uid=u.id WHERE l.status='open' AND l.exp>? AND l.uid<>? AND u.lat IS NOT NULL AND u.lng IS NOT NULL AND u.at>=? LIMIT 500").bind(now,u.id,fresh).all();
+    const items=[]; for(const l of rows.results||[]){if(l.lat==null||await blocked(env,u.id,l.uid))continue;const d=dist(u,l);const rating=Math.round((l.avg_stars||0)*10)/10,ratingCount=l.rating_count||0,trusted=(l.done||0)>=5&&rating>=4.5;if(d<=R){const band=distanceBand(d),sector=bearingSector(bearing(u,l));items.push({id:l.id,type:l.type,amount:l.amount,mins:Math.ceil((l.exp-now)/60000),distanceBand:band,distance:distanceLabel(band),directionSector:sector,direction:bearingLabel(sector),name:l.name,done:l.done||0,rating,ratingCount,trusted,area:l.area||''});}}
+    items.sort((a,b)=>a.distanceBand-b.distanceBand||a.id.localeCompare(b.id));return json({items,mine:mine.results||[]});
   }
   if(p==="listings"&&m==="POST"){
     await userActionLimit(env,u.id,"listing_create",10,10*60000);
@@ -453,8 +490,33 @@ async function api(env,req,p,url){
     if(P[2]==="complete"&&m==="POST"){
       if(t.status!=="open")err("This exchange is closed",409);
       if(!t.pin_verified)err("Verify the meetup PIN together first, then confirm the exchange.",409);
-      let confirmed=JSON.parse(t.confirmed||"[]");if(!confirmed.includes(u.id))confirmed.push(u.id);let status=t.status;if(confirmed.length===2)status="completed";
-      const stmts=[env.DB.prepare("UPDATE threads SET confirmed=?,status=? WHERE id=?").bind(JSON.stringify(confirmed),status,t.id)];if(status==="completed"){stmts.push(env.DB.prepare("UPDATE users SET done=done+1 WHERE id IN (?,?)").bind(u.id,oid));}await env.DB.batch(stmts);const onm=await env.DB.prepare("SELECT name FROM users WHERE id=?").bind(oid).first();if(status==="completed"){await notify(env,u.id,"exchange","Exchange completed: ₹"+t.amount+" with "+(onm&&onm.name||"the other person")+".",t.id);await notify(env,oid,"exchange","Exchange completed: ₹"+t.amount+" with "+u.name+".",t.id);}else{await notify(env,oid,"exchange",u.name+" confirmed the ₹"+t.amount+" exchange. Confirm on your side to complete it.",t.id);await notify(env,u.id,"exchange","You confirmed the exchange. Waiting for the other person.",t.id);}await push(env,oid,{t:"thread"});return json({ok:true});
+      // Atomically add this participant's confirmation. This prevents two concurrent confirmations
+      // from overwriting each other and makes completion a true two-party action.
+      const confirmedJson = "json_insert(confirmed,'$[#]',?)";
+      const added=await env.DB.prepare("UPDATE threads SET confirmed="+confirmedJson+" WHERE id=? AND status='open' AND NOT EXISTS (SELECT 1 FROM json_each(confirmed) WHERE value=?)").bind(u.id,t.id,u.id).run();
+      if(Number(added?.meta?.changes||0)!==1){
+        const current=await env.DB.prepare("SELECT status FROM threads WHERE id=? AND (a=? OR b=?)").bind(t.id,u.id,u.id).first();
+        if(current?.status==="completed") return json({ok:true,confirmed:true,completed:true,waiting:false});
+        return json({ok:true,confirmed:false,waiting:true});
+      }
+      const state=await env.DB.prepare("SELECT confirmed,status FROM threads WHERE id=? AND (a=? OR b=?)").bind(t.id,u.id,u.id).first();
+      const confirmed=JSON.parse(state?.confirmed||"[]");
+      let completedNow=false;
+      if(confirmed.length>=2 && state?.status==="open"){
+        const closed=await env.DB.prepare("UPDATE threads SET status='completed' WHERE id=? AND status='open' AND json_array_length(confirmed)>=2").bind(t.id).run();
+        completedNow=Number(closed?.meta?.changes||0)===1;
+        if(completedNow) await env.DB.prepare("UPDATE users SET done=done+1 WHERE id IN (?,?)").bind(t.a,t.b).run();
+      }
+      const onm=await env.DB.prepare("SELECT name FROM users WHERE id=?").bind(oid).first();
+      if(completedNow){
+        await notify(env,u.id,"exchange","Exchange completed: ₹"+t.amount+" with "+(onm&&onm.name||"the other person")+".",t.id);
+        await notify(env,oid,"exchange","Exchange completed: ₹"+t.amount+" with "+u.name+".",t.id);
+      }else{
+        await notify(env,oid,"exchange","You confirmed the ₹"+t.amount+" exchange. Confirm on your side to complete it.",t.id);
+        await notify(env,u.id,"exchange","You confirmed the exchange. Waiting for the other person.",t.id);
+      }
+      await push(env,oid,{t:"thread"});
+      return json({ok:true,confirmed:true,completed:completedNow,waiting:!completedNow});
     }
     if(P[2]==="pin"&&!P[3]&&m==="POST"){
       await userActionLimit(env,u.id,"pin_generate",5,15*60000);
@@ -478,22 +540,21 @@ async function api(env,req,p,url){
       const code=String(b.code||"").trim();
       if(!/^\d{4}$/.test(code))err("Enter the 4-digit PIN");
       const hash=await sha(code+t.id);
-      if(hash!==t.pin_hash){
+      if(!equalHex(hash,t.pin_hash)){
         const tries=(t.pin_tries||0)+1;
         if(tries>=5){await env.DB.prepare("UPDATE threads SET pin_hash=NULL,pin_by=NULL,pin_exp=NULL,pin_tries=0 WHERE id=?").bind(t.id).run();err("Wrong PIN. Too many attempts — ask for a new one.",429);}
         await env.DB.prepare("UPDATE threads SET pin_tries=? WHERE id=?").bind(tries,t.id).run();
         err("Wrong PIN. "+(5-tries)+" attempt"+(5-tries===1?"":"s")+" left.",401);
       }
-      // Correct PIN: the PIN is single-use, so it is wiped immediately and cannot be replayed.
-      // Both people being able to produce/enter it in person is itself proof the exchange happened,
-      // so this closes the exchange out for both sides right away — no separate manual confirm step.
-      const completed=await env.DB.prepare("UPDATE threads SET pin_hash=NULL,pin_by=NULL,pin_exp=NULL,pin_tries=0,pin_verified=1,confirmed=?,status='completed' WHERE id=? AND status='open' AND pin_hash=?").bind(JSON.stringify([t.a,t.b]),t.id,t.pin_hash).run();
-      if(Number(completed?.meta?.changes||0)!==1)err("This exchange was already completed",409);
-      await env.DB.prepare("UPDATE users SET done=done+1 WHERE id IN (?,?)").bind(t.a,t.b).run();
-      await notify(env,u.id,"exchange","Meetup PIN verified — exchange completed: ₹"+t.amount+" with "+(o&&o.name||"the other person")+".",t.id);
-      await notify(env,oid,"exchange","Meetup PIN verified by "+u.name+" — exchange completed: ₹"+t.amount+".",t.id);
+      // Correct PIN proves the participants can verify the meetup. It does NOT itself prove that
+      // cash was exchanged. Consume the PIN atomically, keep the thread open, and require both
+      // participants to confirm the actual exchange through /complete.
+      const verified=await env.DB.prepare("UPDATE threads SET pin_hash=NULL,pin_by=NULL,pin_exp=NULL,pin_tries=0,pin_verified=1 WHERE id=? AND status='open' AND pin_hash=?").bind(t.id,t.pin_hash).run();
+      if(Number(verified?.meta?.changes||0)!==1)err("This exchange was already verified or completed",409);
+      await notify(env,u.id,"safety","Meetup PIN verified. Confirm the actual cash exchange only after it happens.",t.id);
+      await notify(env,oid,"safety","Meetup PIN verified by "+u.name+". Both sides must confirm the actual exchange to complete it.",t.id);
       await push(env,oid,{t:"thread"});
-      return json({ok:true,completed:true});
+      return json({ok:true,completed:false,verified:true,waiting:true});
     }
     if(P[2]==="rate"&&m==="POST"){
       await userActionLimit(env,u.id,"rate",20,60*60000);
@@ -549,4 +610,15 @@ export class UserStream extends DurableObject {
     return new Response("Not found",{status:404});
   }
 }
-export default {async fetch(req,env){const url=new URL(req.url);if(url.pathname==="/index.html"){return Response.redirect(new URL("/",url),301);}if(url.pathname==="/healthz"){let db=false,schema=false,error=null;const rid=requestId();try{await ensureSchema(env);db=true;schema=!!await env.DB.prepare("SELECT name FROM sqlite_master WHERE name='otps'").first();}catch(e){error=String(e&&e.message||e).slice(0,160);await recordObs(env,{kind:"health_failure",route:"/healthz",status:503,requestId:rid,message:error});}return json({ok:db&&schema,v:12,db,schema,devOtp:devOtpOn(env,url),devOtpConfigured:env.DEV_OTP==="true",error,requestId:rid});}if(url.pathname.startsWith("/api/")){const rid=requestId();try{await ensureSchema(env);return await api(env,req,url.pathname.slice(5),url);}catch(e){const status=Number(e&&e.status)||500;if(!e.status){console.error("Worker error:",e&&e.stack||e);await recordObs(env,{kind:"server_error",route:url.pathname,status,requestId:rid,message:e&&e.message||"Unhandled server error"});}return json({error:e.status?e.message:"Server error",requestId:rid},status);}}const res=await env.ASSETS.fetch(req);const headers=new Headers(res.headers);for(const [k,v] of Object.entries(securityHeaders)){if(!headers.has(k))headers.set(k,v);}if(/^\/admin\.(html|js|css)$/.test(url.pathname)){headers.set("Cache-Control","no-store");}else if(res.ok&&url.pathname!=="/"&&url.pathname!=="/index.html"){headers.set("Cache-Control","public, max-age=300, stale-while-revalidate=86400");}else{headers.set("Cache-Control","no-cache");}headers.set("X-Content-Type-Options","nosniff");return new Response(res.body,{status:res.status,statusText:res.statusText,headers});}};
+async function scheduledCleanup(env){
+  await ensureSchema(env);
+  const now=Date.now();
+  // Location is a short-lived matching signal, not a historical tracking record.
+  await env.DB.prepare("UPDATE users SET lat=NULL,lng=NULL,at=NULL WHERE at IS NOT NULL AND at<?").bind(now-LOCATION_TTL_MS).run();
+  await env.DB.prepare("DELETE FROM sessions WHERE exp<?").bind(now).run();
+  await env.DB.prepare("DELETE FROM otps WHERE exp<?").bind(now).run();
+  await env.DB.prepare("DELETE FROM listings WHERE status='open' AND exp<?").bind(now-24*60*60*1000).run();
+  await env.DB.prepare("DELETE FROM analytics_events WHERE at<?").bind(now-90*86400000).run();
+  await env.DB.prepare("DELETE FROM observability_events WHERE at<?").bind(now-30*86400000).run();
+}
+export default {async scheduled(controller,env){try{await scheduledCleanup(env);}catch(e){console.error("scheduled cleanup",e&&e.message||e);}},async fetch(req,env){const url=new URL(req.url);if(url.pathname==="/index.html"){return Response.redirect(new URL("/",url),301);}if(url.pathname==="/healthz"){let db=false,schema=false,error=null;const rid=requestId();try{await ensureSchema(env);db=true;schema=!!await env.DB.prepare("SELECT name FROM sqlite_master WHERE name='otps'").first();}catch(e){error=String(e&&e.message||e).slice(0,160);await recordObs(env,{kind:"health_failure",route:"/healthz",status:503,requestId:rid,message:error});}return json({ok:db&&schema,v:12,db,schema,devOtp:devOtpOn(env,url),devOtpConfigured:env.DEV_OTP==="true",error,requestId:rid});}if(url.pathname.startsWith("/api/")){const rid=requestId();try{await ensureSchema(env);return await api(env,req,url.pathname.slice(5),url);}catch(e){const status=Number(e&&e.status)||500;if(!e.status){console.error("Worker error:",e&&e.stack||e);await recordObs(env,{kind:"server_error",route:url.pathname,status,requestId:rid,message:e&&e.message||"Unhandled server error"});}return json({error:e.status?e.message:"Server error",requestId:rid},status);}}const res=await env.ASSETS.fetch(req);const headers=new Headers(res.headers);for(const [k,v] of Object.entries(securityHeaders)){if(!headers.has(k))headers.set(k,v);}if(/^\/admin\.(html|js|css)$/.test(url.pathname)){headers.set("Cache-Control","no-store");}else if(res.ok&&url.pathname!=="/"&&url.pathname!=="/index.html"){headers.set("Cache-Control","public, max-age=300, stale-while-revalidate=86400");}else{headers.set("Cache-Control","no-cache");}headers.set("X-Content-Type-Options","nosniff");return new Response(res.body,{status:res.status,statusText:res.statusText,headers});}};
