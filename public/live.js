@@ -1,11 +1,11 @@
 // Live layer: sign-in, radar, chat, reports. Loaded after app.js and replaces its demo screens.
-const S={token:'',me:null,preview:false,items:[],mine:[],threads:[],thread:null,tinfo:null,msgs:[],radius:3,loc:null,geo:'',step:'phone',phone:'',name:'',dev:'',err:'',errKind:'error',draft:'',report:false,pinCode:'',post:null,lastPost:0,view:'radar',acc:0,heading:0,compass:false,radarFrame:0,lastRefresh:0,streamAbort:null,streamRun:0};
+const S={token:'',me:null,preview:true,items:[],mine:[],threads:[],thread:null,tinfo:null,msgs:[],radius:3,loc:null,geo:'',step:'phone',phone:'',name:'',dev:'',err:'',errKind:'error',draft:'',report:false,pinCode:'',post:null,lastPost:0,view:'radar',acc:0,heading:0,compass:false,radarFrame:0,lastRefresh:0,streamAbort:null,streamRun:0};
 state.offers=[];state.requests=[];state.tx=[];
 let _pending=0;
 function _busy(on){_pending=Math.max(0,_pending+(on?1:-1));document.body.classList.toggle('busy',_pending>0);const b=document.getElementById('pbar');if(!b)return;if(on){b.classList.remove('done');b.classList.add('on')}else if(_pending===0){b.classList.add('done');setTimeout(()=>{if(_pending===0)b.classList.remove('on','done')},220)}}
 async function api(p,b,quiet){if(!quiet)_busy(1);try{const r=await fetch('/api/'+p,{method:b?'POST':'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});const j=await r.json().catch(()=>({}));if(r.status===401&&S.me){logout(true);throw new Error('Please sign in again')}if(!r.ok){const e=new Error(j.error||'Something went wrong');e.status=r.status;throw e}return j}finally{if(!quiet)_busy(0)}}
 const fail=e=>toast(e.message),authErr=m=>{S.errKind='error';S.err=m;render()};
-function logout(skipRemote){if(!skipRemote){try{fetch('/api/logout',{method:'POST',keepalive:true}).catch(()=>{})}catch{}}S.token='';S.me=null;S.preview=false;S.thread=null;S.streamRun++;try{S.streamAbort&&S.streamAbort.abort()}catch{}S.streamAbort=null;autoGuest()}
+function logout(skipRemote){if(!skipRemote){try{fetch('/api/logout',{method:'POST',keepalive:true}).catch(()=>{})}catch{}}S.token='';S.me=null;S.guest=false;S.preview=true;S.authMode=false;S.thread=null;S.streamRun++;try{S.streamAbort&&S.streamAbort.abort()}catch{}S.streamAbort=null;state.screen='home';autoGuest()}
 async function deleteAccount(){
   const first=window.confirm('Delete your Near Cash account and all account data? This cannot be undone.');
   if(!first)return;
@@ -24,15 +24,41 @@ async function deleteAccount(){
   }catch(e){fail(e)}
 }
 function splash(){return '<div class="auth"><div class="auth-card" style="text-align:center;background:none;border:0;box-shadow:none"><img onerror="this.style.visibility=\'hidden\'" class="logo" style="width:64px;height:64px;margin:auto" src="'+LOGO+'" alt="Near Cash"><p>Getting things ready…</p></div></div>'}
-async function autoGuest(){S.booting=true;S.preview=false;render();try{const j=await api('guest',{});S.me=j.me;S.guest=true;S.token='cookie';S.preview=false;S.booting=false;boot()}catch(e){S.booting=false;S.guest=false;S.preview=false;S.err=e.status===403?'':e.message;render()}}
-async function continueAsGuest(){S.err='';try{const j=await api('guest',{});S.me=j.me;S.guest=true;S.token='cookie';S.preview=false;S.authMode=false;boot()}catch(e){S.preview=true;S.authMode=false;S.err='Guest access is unavailable right now. You can still view the homepage.';render()}}
-function closeAuth(){S.preview=true;S.authMode=false;S.err='';render()}
-async function saveProfile(){const n=(document.getElementById('pname')?.value||'').trim().slice(0,40);if(!n)return toast('Enter a name.');try{await api('profile',{name:n});state.profile.name=n;if(S.me)S.me.name=n;persist();toast('Profile saved.')}catch(e){fail(e)}}
+let _guestP=null,_guestRetry=0,_guestTimer=0;
+function ensureGuest(){
+  if(_guestP)return _guestP;
+  _guestP=(async()=>{
+    try{const j=await api('guest',{});S.me=j.me;S.guest=true;S.token='cookie';S.preview=false;S.authMode=false;S.err='';S.guestErr=0;_guestRetry=0;boot();return true}
+    catch(e){S.guestErr=(e&&e.status)||0;return false}
+    finally{_guestP=null}
+  })();
+  return _guestP;
+}
+async function autoGuest(){
+  clearTimeout(_guestTimer);S.booting=false;
+  if(!S.me){S.token='';S.preview=true}
+  render();
+  const ok=await ensureGuest();
+  if(ok||S.me)return;
+  S.preview=true;S.authMode=false;render();
+  if(S.guestErr!==403&&_guestRetry<4){_guestRetry++;_guestTimer=setTimeout(()=>{if(!S.me&&!S.authMode&&!_guestP)autoGuest()},4000*_guestRetry)}
+}
+async function continueAsGuest(){
+  S.err='';
+  const ok=await ensureGuest();
+  if(ok||S.me)return;
+  S.preview=true;S.authMode=false;S.err='';render();toast('Guest access is unavailable right now. Please try again.');
+}
+function closeAuth(){
+  S.authMode=false;S.err='';S.step='phone';S.dev='';
+  if(S.me){state.screen='home';S.preview=false}else{S.preview=true}
+  render();
+}
 function startUpgrade(){S.authMode=true;S.step='phone';S.phone='';S.name=(S.me&&S.me.name)||state.profile.name||'';S.err='';S.dev='';render()}
 function cancelUpgrade(){S.authMode=false;S.err='';render()}
 function authHtml(){const p=S.step==='phone',upgrading=S.authMode&&S.me;return `<div class="auth auth-gate"><div class="card auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title"><button class="auth-close" type="button" aria-label="Close sign in and view homepage" title="View homepage" onclick="closeAuth()">×</button><img onerror="this.style.visibility='hidden'" class="logo" style="width:56px;height:56px" src="${LOGO}" alt="Near Cash logo"><h1 id="auth-title">${p?'Log in or sign up':'Enter your code'}</h1><p>${p?'Verify your phone to unlock a trusted, non-guest account.':'Sent to '+esc(S.phone)+'.'}</p>${p?`<label>Your name</label><div class="field"><input id="an" value="${esc(S.name)}" maxlength="40"></div><label>Phone number</label><div class="field"><input id="ap" inputmode="tel" value="${esc(S.phone)}" placeholder="+91 98765 43210"></div><label class="chk"><input type="checkbox" id="aa"> I am 18 or older and will only meet in public places.</label><button class="primary full" onclick="sendOtp()">Send code</button><button class="secondary full auth-guest" onclick="continueAsGuest()">Continue as guest</button>`:`<label>6-digit code</label><div class="field"><input id="ac" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>${S.dev?`<div class="dev"><span>Verification Code:</span><b>${S.dev}</b></div>`:''}<button class="primary full" onclick="verifyOtp()">Verify and continue</button><button class="text" onclick="S.step='phone';S.err='';render()">Change number</button>`}${upgrading?'<button class="text" onclick="cancelUpgrade()">‹ Continue as guest</button>':''}<button class="text auth-home" type="button" onclick="closeAuth()">View homepage without signing in</button>${S.err?`<div class="${S.errKind==='info'?'err info':'err'}" role="status">${esc(S.err)}</div>`:''}</div></div>`}
 async function sendOtp(){S.name=document.getElementById('an').value.trim();S.phone=document.getElementById('ap').value.trim();const ad=document.getElementById('aa').checked;if(!S.name)return authErr('Enter your name.');if(!ad)return authErr('Confirm that you are 18 or older.');try{const j=await api('otp',{phone:S.phone});S.dev=j.devCode||'';S.step='code';S.err='';render()}catch(e){if(e.status===503){S.errKind='info';S.err='Phone verification is temporarily unavailable. You can continue as a guest or view the homepage.';render();return}authErr(e.message)}}
-async function verifyOtp(){try{const j=await api('verify',{phone:S.phone,code:document.getElementById('ac').value.trim(),name:S.name,adult:true});S.me=j.me;S.guest=false;S.authMode=false;S.token='cookie';S.err='';boot()}catch(e){S.err=e.message;render()}}
+async function verifyOtp(){try{const j=await api('verify',{phone:S.phone,code:document.getElementById('ac').value.trim(),name:S.name,adult:true});S.me=j.me;S.guest=false;S.authMode=false;S.preview=false;S.token='cookie';S.err='';boot()}catch(e){S.err=e.message;render()}}
 function boot(){S.authMode=false;state.profile.name=S.me.name;state.screen='home';connect();startGeo();refresh()}
 function setRadius(k){S.radius=k;render();refresh()}
 async function refresh(quiet){try{const[n,t,nf]=await Promise.all([api('nearby?r='+S.radius,undefined,quiet),api('threads',undefined,quiet),api('notifications',undefined,quiet)]);S.items=n.items;S.mine=n.mine;S.threads=t.items;gotNotifs(nf);S.lastRefresh=Date.now();state.offers=S.items.filter(x=>x.type==='have').map(x=>({status:'open',expires:Infinity}));state.requests=S.items.filter(x=>x.type==='need').map(x=>({status:'open'}));state.tx=S.threads;
@@ -161,11 +187,16 @@ function gsClose(){const b=document.getElementById('sres');if(b)b.hidden=true}
 function gsKey(e){if(e.key==='Enter'&&S.gsr&&S.gsr[0])gsPick(0);else if(e.key==='Escape'){gsClose();e.target.blur()}}
 function profileLegalLinks(){const docs=[['legal.html','Legal centre'],['privacy.html','Privacy'],['terms.html','Terms'],['acceptable-use.html','Acceptable use'],['community-guidelines.html','Community guidelines'],['report-abuse.html','Report & abuse'],['grievance.html','Grievance & dispute'],['cookies.html','Cookies & analytics'],['data-deletion.html','Account & data deletion'],['ip-policy.html','Intellectual property'],['security.html','Security & disclosure']];return `<section class="profile-legal card" aria-labelledby="profile-legal-title"><div class="eyebrow">LEGAL &amp; POLICIES</div><h2 id="profile-legal-title">Documents</h2><p>Read the policies and notices that govern Near Cash.</p><div class="profile-legal-links">${docs.map(d=>`<a href="${d[0]}">${d[1]}</a>`).join('')}</div></section>`} 
 const baseRender=render,baseGo=go,baseProfile=profile;
-let _guestGoBusy=false;
-async function guestThenGo(s){if(_guestGoBusy)return;_guestGoBusy=true;let ok=false;try{const j=await api('guest',{});S.me=j.me;S.guest=true;S.token='cookie';S.preview=false;S.authMode=false;S.err='';ok=true}catch(e){S.preview=true;S.authMode=false;S.err='';toast('Could not start a guest session. Please try again.')}finally{_guestGoBusy=false}if(ok){boot();go(s)}}
-go=function(s){if(S.preview&&!['home','safety'].includes(s)){guestThenGo(s);return}S.thread=null;S.report=false;S.pinCode='';if(s!=='live')S.post=null;baseGo(s)};
+async function guestThenGo(s){
+  const ok=await ensureGuest();
+  if(ok||S.me){S.preview=false;go(s);return}
+  if(S.guestErr===403||s==='profile'){S.preview=false;S.authMode=true;S.step='phone';S.err='';render();return}
+  S.preview=true;
+  S.err='';render();toast('Could not start a guest session. Please try again.');
+}
+go=function(s){if(S.preview&&!S.me&&!['home','safety'].includes(s)){guestThenGo(s);return}S.thread=null;S.report=false;S.pinCode='';if(s!=='live')S.post=null;baseGo(s)};
 profile=function(){let html=baseProfile();if(!S.guest){html=html.replace('<span class="verified">Guest account</span>','<span class="verified">✓ Verified account</span>');html=html.replace('<div class="verify-row">◉<div><b>Guest account</b><span>Not phone-verified · meet only in public places</span></div><b style="color:var(--accent)">✓</b></div>','<div class="verify-row">✓<div><b>Phone verified</b><span>Signed in with a verified phone number</span></div><b style="color:var(--accent)">✓</b></div>')}const rep=S.me?`<div class="profile-card card"><label>Trust &amp; Reputation</label><div class="rep-row"><b>${repText(S.me.rating,S.me.ratingCount)}</b>${badgeChips(S.me.badges)}</div><span style="color:var(--muted);font-size:11px">${S.me.done||0} completed exchange${(S.me.done||0)===1?'':'s'}</span></div>`:'';const authBtn=S.guest?'<button class="primary full" style="margin-top:12px" onclick="startUpgrade()">Log in / Sign up with phone number</button>':'';return html.replace(/<\/div>$/,rep+authBtn+'<button class="secondary full" style="margin-top:12px" onclick="logout()">'+(S.guest?'Start over as a new guest':'Log out')+'</button>'+(S.me?'<button class="danger full" style="margin-top:10px" onclick="deleteAccount()" aria-label="Delete account and all associated data">Delete account &amp; all data</button>':'')+profileLegalLinks()+'</div>')};
 render=function(){const m=document.getElementById('msg');if(m)S.draft=m.value;const gsf=document.activeElement&&document.activeElement.id==='gs';if(S.preview){baseRender();return}if(!S.token||S.authMode){A.innerHTML=(!S.token&&S.booting)?splash():authHtml();return}baseRender();if(gsf){const gi=document.getElementById('gs');if(gi){gi.focus();gi.setSelectionRange(gi.value.length,gi.value.length);gsearch(gi.value)}}if(state.screen==='notifications'&&state.unread!==0&&S.notifs.some(n=>!n.read))markRead();if(state.screen==='find'){startRadar()}if(S.thread&&S.draft&&document.getElementById('msg'))document.getElementById('msg').value=S.draft};
-api('me').then(j=>{S.me=j;S.guest=!!j.guest;S.token='cookie';boot()}).catch(()=>autoGuest());
+api('me',undefined,true).then(j=>{S.me=j;S.guest=!!j.guest;S.token='cookie';S.preview=false;boot()}).catch(()=>autoGuest());
 setInterval(()=>{if(S.token&&S.me&&!document.hidden)refresh(true)},20000);
 render();
