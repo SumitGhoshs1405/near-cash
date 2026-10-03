@@ -11,7 +11,7 @@ Non-custodial cash-matching app on Cloudflare Workers + D1 + Durable Objects. Op
 
 ## Config
 - `REQUIRE_SIGNIN` (`wrangler.jsonc`): `"false"` lets the app start a guest session.
-- `DEV_OTP=true` (Cloudflare variable/secret): shows the sign-in code on screen as "Verification Code" instead of sending an SMS. Remove it for real SMS.
+- `DEV_OTP`: if no SMS provider is configured, the sign-in code is shown on screen as "Verification Code" automatically. `DEV_OTP=true` forces it on; `DEV_OTP=false` forces it off. **Configure SMS before real launch** - on-screen codes let anyone sign in as any number.
 - Google Maps: paste your key in `public/config.js`.
 
 ## Develop & test
