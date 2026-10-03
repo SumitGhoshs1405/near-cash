@@ -35,7 +35,9 @@ async function sha(s){ const b=await crypto.subtle.digest("SHA-256", new TextEnc
 const equalHex=(a,b)=>{a=String(a);b=String(b);if(a.length!==b.length)return false;let d=0;for(let i=0;i<a.length;i++)d|=a.charCodeAt(i)^b.charCodeAt(i);return d===0;};
 const clean=v=>String(v??"").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,"");
 // DEV_OTP: when the Cloudflare variable/secret DEV_OTP is exactly "true", the sign-in code is shown on screen as "Verification Code" (no SMS needed). Remove or set DEV_OTP to anything else to switch back to real SMS.
-const devOtpOn=(env,url)=>env.DEV_OTP==="true";
+// Dev code is also used automatically whenever no SMS provider is configured, so sign-in never dead-ends with an "SMS not configured" error. Set DEV_OTP="false" to force it off.
+const smsConfigured=env=>!!(env.SMS_WEBHOOK_URL||(env.TWILIO_ACCOUNT_SID&&env.TWILIO_AUTH_TOKEN&&env.TWILIO_FROM));
+const devOtpOn=(env,url)=>env.DEV_OTP==="false"?false:env.DEV_OTP==="true"?true:!smsConfigured(env);
 const escPhone = s => String(s||"").replace(/[\s-]/g,"");
 const LOCATION_TTL_MS=30*60*1000;
 const LOCATION_MIN_INTERVAL_MS=10000;
