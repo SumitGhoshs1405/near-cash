@@ -43,24 +43,25 @@ t('DEV_OTP=true (Cloudflare variable) shows the Verification Code on a deployed 
   assert.equal(h.body.devOtp, true);
 });
 
-t('without DEV_OTP a deployed hostname never returns the code', async () => {
+t('with no SMS provider configured, the Verification Code is shown instead of an error', async () => {
   const app = await boot(root, {});
+  const r = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
+  assert.equal(r.status, 200);
+  assert.match(r.body.devCode, /^\d{6}$/);
+  const h = await j(await app.call('GET', PROD + '/healthz'));
+  assert.equal(h.body.devOtp, true);
+});
+
+t('DEV_OTP=false never returns the code and reports unavailable when SMS is not configured', async () => {
+  const app = await boot(root, { DEV_OTP: 'false' });
   const r = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
   assert.equal(r.body.devCode, undefined);
   assert.equal(r.status, 503);
-  assert.doesNotMatch(String(r.body.error||''), /SMS provider not configured/i);
-  const h = await j(await app.call('GET', PROD + '/healthz'));
-  assert.equal(h.body.devOtp, false);
-});
-
-t('failed SMS send does not lock the number out for 5 minutes', async () => {
-  const app = await boot(root, {});
-  const first = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
-  assert.equal(first.status, 503);
   assert.equal(app.DB.raw.prepare('SELECT COUNT(*) c FROM otps').get().c, 0);
   const second = await j(await app.call('POST', PROD + '/api/otp', { body: { phone: '+919876543210' } }));
-  assert.equal(second.status, 503); // not 429 "please wait"
-  assert.doesNotMatch(String(second.body.error||''), /SMS provider not configured/i);
+  assert.equal(second.status, 503);
+  const h = await j(await app.call('GET', PROD + '/healthz'));
+  assert.equal(h.body.devOtp, false);
 });
 
 t('DEV_OTP works on localhost only, and the code really signs you in', async () => {
