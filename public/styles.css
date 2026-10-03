@@ -240,3 +240,9 @@ button:focus-visible,input:focus-visible,.starbtn:focus-visible{outline:2px soli
 .legal-brand b{font-weight:800;background:linear-gradient(135deg,#ffe58f,#f5b82e 55%,#d98e0f);-webkit-background-clip:text;background-clip:text;color:transparent}
 .legal-logo{width:34px;height:38px;display:block;object-fit:contain;flex:none}
 @media(max-width:560px){.profile-legal{padding:16px}.profile-legal-links{grid-template-columns:1fr}.legal-wrap{padding:28px 16px 60px}.legal-top{align-items:flex-start;flex-direction:column}.legal-nav{width:100%}.legal-logo{width:30px;height:34px}.legal-brand{font-size:20px}}
+
+/* Full-screen login / sign up page (no popup card) */
+.auth.auth-gate{position:fixed;inset:0;z-index:1000;display:block;min-height:0;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;background:#070a12;backdrop-filter:none}
+.auth-gate .auth-card{width:100%;max-width:480px;min-height:100%;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 72px) 24px calc(env(safe-area-inset-bottom,0px) + 32px);border:0;border-radius:0;background:transparent;box-shadow:none;position:static}
+.auth-gate .auth-close{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:16px;z-index:2}
+@media(min-width:600px){.auth-gate .auth-card{padding-top:96px}}
